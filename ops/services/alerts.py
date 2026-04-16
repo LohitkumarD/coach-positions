@@ -8,8 +8,14 @@ from ops.models import AlertEvent, AlertPriority, AlertType, DecisionSnapshot, T
 
 
 def _priority_for(service: TrainService, band_before: str, band_after: str) -> str:
-    eta_minutes = (service.scheduled_arrival - timezone.now()).total_seconds() / 60.0
-    if eta_minutes <= 45 or band_after == "low":
+    arrival = service.scheduled_arrival
+    if arrival is not None:
+        eta_minutes = (arrival - timezone.now()).total_seconds() / 60.0
+        within_45 = eta_minutes <= 45
+    else:
+        # No ETA on the train service: never infer proximity; still honor confidence-based rules.
+        within_45 = False
+    if within_45 or band_after == "low":
         return AlertPriority.CRITICAL
     if band_before in {"high", "medium"} and band_after == "low":
         return AlertPriority.HIGH
