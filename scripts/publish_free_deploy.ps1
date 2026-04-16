@@ -20,7 +20,7 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     Write-Error "GitHub CLI (gh) not found. Install from https://cli.github.com/ or: winget install GitHub.cli"
 }
 
-gh auth status 2>$null | Out-Null
+cmd /c "gh auth status >nul 2>nul"
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Not logged in. Run this in the same window, complete the browser step, then re-run:" -ForegroundColor Yellow
