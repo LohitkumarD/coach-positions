@@ -4,8 +4,8 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
-    preDeployCommand: python manage.py migrate --noinput
-    startCommand: gunicorn coach_position.wsgi:application
+    # Free tier: preDeployCommand is not allowed; migrate on each dyno start (idempotent).
+    startCommand: 'sh -c "python manage.py migrate --noinput && exec gunicorn coach_position.wsgi:application"'
     autoDeploy: true
     envVars:
       - key: DJANGO_SETTINGS_MODULE
