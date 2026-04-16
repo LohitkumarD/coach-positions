@@ -12,6 +12,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+# Winget installs GitHub CLI here; terminals opened before install often lack it on PATH until restart.
+$ghDir = "C:\Program Files\GitHub CLI"
+if (Test-Path "$ghDir\gh.exe") {
+    $env:Path = "$ghDir;$env:Path"
+}
 
 Set-Location (Split-Path $PSScriptRoot)
 
@@ -24,7 +29,7 @@ cmd /c "gh auth status >nul 2>nul"
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Not logged in. Run this in the same window, complete the browser step, then re-run:" -ForegroundColor Yellow
-    Write-Host "  gh auth login -h github.com -p https -w" -ForegroundColor Cyan
+    Write-Host ('  & "{0}\gh.exe" auth login -h github.com -p https -w' -f $ghDir) -ForegroundColor Cyan
     exit 1
 }
 
