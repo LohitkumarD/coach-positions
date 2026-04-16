@@ -1,0 +1,46 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Sign In — Coach Position</title>
+  <link rel="manifest" href="{% static 'ops/manifest.json' %}" />
+  <link rel="stylesheet" href="{% static 'ops/mobile.css' %}" />
+</head>
+<body class="auth-page">
+  <header class="top-bar auth-header">
+    <div class="top-bar-inner">
+      <div>
+        <h1 class="auth-title">Coach Position</h1>
+        <p class="auth-subtitle">Staff sign-in</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="auth-main">
+    <section class="card login-card">
+      <form method="post" class="login-form" action="">
+        {% csrf_token %}
+        <div class="field">
+          <label for="id_username">Phone number or username</label>
+          <input id="id_username" name="username" type="text" autocomplete="username" required inputmode="tel" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="10-digit phone or staff ID" />
+        </div>
+        <div class="field">
+          <label for="id_password">Password</label>
+          <input id="id_password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+
+        {% if form.errors %}
+          <p class="login-error" role="alert">Invalid phone/username or password.</p>
+        {% endif %}
+
+        <button type="submit" class="login-submit btn-primary">Sign in</button>
+        <input type="hidden" name="next" value="{{ next }}" />
+      </form>
+    </section>
+    <p class="auth-footnote meta">Session-based login. Not an official railway system.</p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{% extends "ops/base.html" %}
+{% load static %}
+{% block title %}More — Coach Position{% endblock %}
+{% block page_heading %}More{% endblock %}
+
+{% block content %}
+<main class="more-page">
+  <section class="card">
+    <div class="meta"><strong>Account</strong></div>
+    <p class="meta">Signed in as <strong>{{ request.user.username }}</strong></p>
+    <p class="meta">Role: {{ ops_user_role_display }}</p>
+    <form action="{% url 'logout' %}" method="post" class="logout-form">
+      {% csrf_token %}
+      <button type="submit" class="btn-secondary full-width">Sign out</button>
+    </form>
+  </section>
+
+  {% if ops_show_supervisor_nav %}
+  <section class="card">
+    <div class="meta"><strong>Supervisor</strong></div>
+    <ul class="more-links">
+      <li><a href="{% url 'supervisor-page' %}">Conflict console</a></li>
+    </ul>
+  </section>
+
+  <section class="card" id="scoreboardSection">
+    <div class="meta"><strong>Contributor scoreboard</strong></div>
+    <p class="meta">Reliability ranking (supervisor view).</p>
+    <label class="sr-only" for="scoreboardStation">Filter by station</label>
+    <div class="controls tight">
+      <input id="scoreboardStation" placeholder="Station code (optional)" maxlength="8" />
+      <button type="button" id="scoreboardLoadBtn" class="btn-secondary">Load</button>
+    </div>
+    <div id="scoreboardBody" class="meta scoreboard-body"></div>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="meta"><strong>About</strong></div>
+    <p class="meta">Assistant tool for counter staff. Not an official railway system. Verify low-confidence compositions before announcements.</p>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'ops/more.js' %}"></script>
+{% endblock %}

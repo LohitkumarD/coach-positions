@@ -1,0 +1,10 @@
+{
+  "name": "Coach Position Board",
+  "short_name": "Coach Board",
+  "description": "Coach composition decision support for station staff",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f6fb",
+  "theme_color": "#f3f6fb",
+  "orientation": "portrait-primary"
+}

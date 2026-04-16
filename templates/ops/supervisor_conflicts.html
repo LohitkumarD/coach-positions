@@ -1,0 +1,17 @@
+{% extends "ops/base.html" %}
+{% load static %}
+{% block title %}Conflicts — Coach Position{% endblock %}
+{% block page_heading %}Conflict console{% endblock %}
+
+{% block content %}
+<section class="controls">
+  <label class="sr-only" for="stationCode">Station code</label>
+  <input id="stationCode" placeholder="Station code" />
+  <button id="refreshBtn" type="button">Refresh</button>
+</section>
+<main id="conflictCards" class="board-main"></main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'ops/supervisor.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f3f6fb" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>{% block title %}Coach Position{% endblock %}</title>
+  <link rel="manifest" href="{% static 'ops/manifest.json' %}" />
+  <link rel="stylesheet" href="{% static 'ops/mobile.css' %}" />
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="app-body{% block body_class %}{% endblock %}">
+  <header class="top-bar">
+    <div class="top-bar-inner">
+      <h1>{% block page_heading %}Coach Position{% endblock %}</h1>
+      <div class="top-bar-meta">
+        {% block header_extra %}{% endblock %}
+        {% if request.user.is_authenticated %}
+        <span class="badge neutral user-chip" title="{{ ops_user_role_display }}">{{ request.user.username }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <div class="app-content">
+    {% block content %}{% endblock %}
+  </div>
+
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <a href="{% url 'board-page' %}" class="bottom-nav__item {% if nav_active == 'board' %}is-active{% endif %}">Board</a>
+    <a href="{% url 'submit-page' %}" class="bottom-nav__item {% if nav_active == 'submit' %}is-active{% endif %}">Submit</a>
+    <a href="{% url 'more-page' %}" class="bottom-nav__item {% if nav_active == 'more' %}is-active{% endif %}">More</a>
+  </nav>
+
+  <div id="toastRoot" class="toast-root" aria-live="polite" aria-atomic="true"></div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

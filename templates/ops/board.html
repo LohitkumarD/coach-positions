@@ -1,0 +1,31 @@
+{% extends "ops/base.html" %}
+{% load static %}
+{% block title %}Live Board — Coach Position{% endblock %}
+{% block page_heading %}Live board{% endblock %}
+{% block header_extra %}<span id="networkState" class="badge neutral">Offline</span>{% endblock %}
+
+{% block content %}
+<section class="controls">
+  <label class="sr-only" for="stationCode">Train number</label>
+  <input id="stationCode" inputmode="numeric" pattern="[0-9]*" placeholder="Train number (e.g. 12614)" autocomplete="off" />
+  <button id="loadBtn" type="button">Load</button>
+</section>
+<p class="hint-panel board-search-hint">Lists all trains (up to 100) on load. Enter digits and tap Load to filter. Columns: last update, reporter phone, station from the latest report.</p>
+<section id="alertsPanel" class="alerts-wrap"></section>
+<main id="boardCards" class="board-main"></main>
+
+<div id="explainSheet" class="sheet" hidden>
+  <div class="sheet__backdrop" id="explainBackdrop" aria-hidden="true"></div>
+  <div class="sheet__panel" role="dialog" aria-labelledby="explainTitle">
+    <div class="sheet__head">
+      <h2 id="explainTitle" class="sheet__title">Why this composition?</h2>
+      <button type="button" class="sheet__close" id="explainClose" aria-label="Close">×</button>
+    </div>
+    <div id="explainBody" class="sheet__body meta"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'ops/board.js' %}"></script>
+{% endblock %}

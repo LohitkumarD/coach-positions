@@ -1,0 +1,213 @@
+{% extends "ops/base.html" %}
+{% load static %}
+{% block title %}Submit — Coach Position{% endblock %}
+{% block page_heading %}Submit{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="{% static 'ops/submit.css' %}" />
+{% endblock %}
+
+{% block body_class %} submit-body{% endblock %}
+
+{% block content %}
+<div class="submit-app submit-app--pro" id="submitAppRoot">
+  <h2 class="submit-app__title">Submit</h2>
+
+  <section id="screenHome" class="submit-screen" aria-label="Home">
+    <div class="card">
+      <label class="form-label" for="imageTypeSelect">Photo type</label>
+      <select id="imageTypeSelect" class="form-select" aria-describedby="imageTypeHelp">
+        <option value="unknown">Unknown</option>
+        <option value="whatsapp_screenshot">WhatsApp / screenshot</option>
+        <option value="handwritten_sheet">Handwritten sheet</option>
+        <option value="printed_control_sheet">Printed control sheet</option>
+        <option value="mobile_screen_photo">Mobile screen photo</option>
+        <option value="multi_train_sheet">Multi-train sheet</option>
+      </select>
+      <details class="pro-details pro-details--inline">
+        <summary class="pro-details__summary">ℹ️</summary>
+        <p id="imageTypeHelp" class="pro-details__body">Helps interpret the photo.</p>
+      </details>
+    </div>
+    <input type="file" id="fileScanInput" class="visually-hidden" accept="image/*" aria-hidden="true" />
+    <p id="homeStaleWarning" class="scan-stale-warning" hidden role="status"></p>
+    <button type="button" class="btn-primary" id="btnScanImage">Scan</button>
+    <button type="button" class="btn-secondary" id="btnManualEntry">Manual</button>
+    <div class="card">
+      <h3 class="card__title">Recent</h3>
+      <ul class="recent-list" id="recentList" aria-live="polite"></ul>
+      <p id="recentEmpty" class="hint-panel hint-panel--minimal">No recent trains.</p>
+    </div>
+  </section>
+
+  <section id="screenScan" class="submit-screen" hidden aria-label="Scan results">
+    <div class="card">
+      <h3 class="card__title">Scan</h3>
+      <p id="scanStaleWarning" class="scan-stale-warning" hidden role="status"></p>
+      <div id="scanResultsContainer"></div>
+    </div>
+    <p class="hint-panel hint-panel--minimal" id="scanNextHint">Pick a train, then edit.</p>
+    <button type="button" class="btn-secondary" id="btnScanBack">Back</button>
+  </section>
+
+  <section id="screenEdit" class="submit-screen" hidden aria-label="Edit report">
+    <div class="card card--train">
+      <h3 class="card__title">Train No <span class="req" aria-hidden="true">*</span></h3>
+      <label class="form-label" for="trainNoHint">Number</label>
+      <input id="trainNoHint" class="form-input" placeholder="e.g. 12614" autocomplete="off" />
+      <details class="train-optional" id="trainOptionalBlock">
+        <summary class="train-optional__summary">Optional</summary>
+        <div class="train-optional__inner">
+          <label class="form-label" for="trainNameHint">Name</label>
+          <input id="trainNameHint" class="form-input" placeholder="Optional" autocomplete="off" />
+          <label class="form-label" for="journeyHint">Date</label>
+          <input id="journeyHint" class="form-input" type="date" />
+          <label class="form-label" for="reportStation">Station code</label>
+          <input id="reportStation" class="form-input" maxlength="8" placeholder="RNR" autocomplete="off" />
+          <label class="form-label" for="trainSearch">Search trains</label>
+          <input id="trainSearch" class="form-input" placeholder="No. or name" autocomplete="off" />
+          <label class="form-label" for="trainOptions">Service</label>
+          <select id="trainOptions" class="form-select"></select>
+          <input id="trainServiceId" type="hidden" />
+          <p id="selectedTrainMeta" class="selected-train-line" aria-live="polite"></p>
+          <div id="emptyTrainHint" class="empty-train-inline" hidden>
+            <button type="button" id="openAddTrainBtn" class="btn-secondary btn-secondary--tight">Add train</button>
+          </div>
+          <button type="button" class="btn-secondary" id="btnApplyTrainSearch">Apply search</button>
+        </div>
+      </details>
+    </div>
+
+    <div id="addTrainPanel" class="section-compact add-train-panel" hidden>
+      <h3 class="card__title">New train</h3>
+      <div class="form-grid">
+        <div>
+          <label class="form-label" for="newTrainNo">Train number</label>
+          <input id="newTrainNo" class="form-input" placeholder="e.g. 12726" />
+        </div>
+        <div>
+          <label class="form-label" for="newTrainName">Train name</label>
+          <input id="newTrainName" class="form-input" placeholder="Optional" />
+        </div>
+        <div>
+          <label class="form-label" for="newJourneyDate">Journey date</label>
+          <input id="newJourneyDate" class="form-input" type="date" />
+        </div>
+        <div>
+          <label class="form-label" for="newOriginCode">Origin</label>
+          <input id="newOriginCode" class="form-input" placeholder="e.g. SBC" />
+        </div>
+        <div>
+          <label class="form-label" for="newDestinationCode">Destination</label>
+          <input id="newDestinationCode" class="form-input" placeholder="e.g. RNR" />
+        </div>
+        <div>
+          <label class="form-label" for="newTargetCode">Target station (optional)</label>
+          <input id="newTargetCode" class="form-input" placeholder="Usually your station" />
+        </div>
+        <div>
+          <label class="form-label" for="newScheduledArrival">Arrival (optional)</label>
+          <input id="newScheduledArrival" class="form-input" type="datetime-local" />
+        </div>
+        <div>
+          <label class="form-label" for="newScheduledDeparture">Departure (optional)</label>
+          <input id="newScheduledDeparture" class="form-input" type="datetime-local" />
+        </div>
+      </div>
+      <label class="form-label" for="newRouteCodes">Route codes (comma-separated)</label>
+      <input id="newRouteCodes" class="form-input" placeholder="SBC,DVG,RNR" />
+      <button type="button" id="createTrainBtn" class="btn-primary">Create</button>
+      <p id="createTrainResult" class="submit-result" aria-live="polite"></p>
+    </div>
+
+    <div class="card card--coaches">
+      <h3 class="card__title">Coaches</h3>
+      <input type="hidden" id="sequenceInput" autocomplete="off" />
+      <div id="chipEmptyState" class="chip-empty chip-empty--minimal">No coaches yet.</div>
+      <ul id="chipList" class="chip-list" aria-label="Coach sequence"></ul>
+      <button type="button" class="btn-secondary" id="btnAddCoach">+</button>
+      <div id="quickAddRow" class="quick-add-bar">
+        <div id="quickAddButtons" role="group" aria-label="Quick add"></div>
+      </div>
+    </div>
+
+    <div class="section-compact">
+      <h3 class="card__title">Source</h3>
+      <label class="visually-hidden" for="sourceType">Source</label>
+      <select id="sourceType" class="form-select">
+        <option value="physical_check">Physical check</option>
+        <option value="tte_onboard">TTE onboard</option>
+        <option value="enroute_station">Enroute station</option>
+        <option value="origin_station">Origin station</option>
+        <option value="forwarded_message">Forwarded message</option>
+      </select>
+    </div>
+
+    <div class="card card--last-known">
+      <h3 class="card__title">Last known</h3>
+      <div id="lastKnownBlock" class="last-known-banner" hidden>
+        <p id="lastKnownText" class="last-known-banner__text"></p>
+        <button type="button" class="btn-primary" id="btnApplyLastKnown">Apply</button>
+      </div>
+      <p id="lastKnownEmpty" class="hint-panel hint-panel--minimal">—</p>
+    </div>
+
+    <div class="card direction-card">
+      <div class="card__title-row">
+        <h3 class="card__title">Direction</h3>
+        <details class="pro-details">
+          <summary class="pro-details__summary" aria-label="About direction">ℹ️</summary>
+          <div id="directionHelpDynamic" class="pro-details__body"></div>
+        </details>
+      </div>
+      <fieldset class="direction-fieldset">
+        <legend class="visually-hidden">Direction</legend>
+        <label class="direction-option">
+          <input type="radio" name="directionMode" id="directionEngine" value="engine" checked />
+          <span>Engine → tail</span>
+        </label>
+        <label class="direction-option">
+          <input type="radio" name="directionMode" id="directionTail" value="tail" />
+          <span>Tail → engine</span>
+        </label>
+      </fieldset>
+      <button type="button" class="btn-secondary" id="btnReverseOrder">Reverse</button>
+    </div>
+
+    <div id="issuesCard" class="card card--risk" role="region" aria-labelledby="issuesHeading">
+      <h3 class="card__title" id="issuesHeading">Issues</h3>
+      <div id="issuesRegion" class="issues-region">
+        <ul id="issuesList"></ul>
+      </div>
+    </div>
+
+    <div class="section-compact section-compact--ai">
+      <h3 class="card__title">AI</h3>
+      <div id="aiInfoBlock" class="ai-info ai-info--compact" aria-live="polite"></div>
+      <div id="aiChangeBlock" class="ai-change-block ai-change-block--compact" hidden aria-live="polite"></div>
+    </div>
+
+    <div class="card card--review">
+      <h3 class="card__title">Review</h3>
+      <div id="reviewSummary" class="review-compact" aria-live="polite"></div>
+    </div>
+
+    <div class="submit-sticky">
+      <div class="actions-row">
+        <button type="button" class="btn-secondary" id="btnSaveDraft">Save</button>
+        <button type="button" class="btn-primary" id="btnSubmit">Submit</button>
+      </div>
+    </div>
+    <button type="button" class="btn-secondary" id="btnEditBack">Back</button>
+    <p id="submitResult" class="submit-result submit-result--animate" aria-live="assertive"></p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="{% static 'ops/submit.js' %}"></script>
+{% endblock %}
