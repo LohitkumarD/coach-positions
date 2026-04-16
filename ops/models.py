@@ -1,9 +1,38 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
+
+from ops.phone_utils import normalize_phone
+
+
+class CustomUserManager(BaseUserManager):
+    """Phone is the canonical identifier; username is always mirrored for Django."""
+
+    use_in_migrations = True
+
+    def create_user(self, phone, password=None, **extra_fields):
+        phone = normalize_phone(phone)
+        if not phone:
+            raise ValueError("The given phone must be set")
+        extra_fields.setdefault("is_staff", False)
+        extra_fields.setdefault("is_superuser", False)
+        user = self.model(phone=phone, username=phone, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, phone, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+        return self.create_user(phone, password, **extra_fields)
 
 
 class UserRole(models.TextChoices):
@@ -60,20 +89,29 @@ class Station(models.Model):
 
 
 class UserProfile(AbstractUser):
+    USERNAME_FIELD = "phone"
+    REQUIRED_FIELDS: list[str] = []
+
     role = models.CharField(max_length=24, choices=UserRole.choices, default=UserRole.CONTRIBUTOR)
     phone = models.CharField(
-        max_length=20,
-        null=True,
-        blank=True,
+        max_length=15,
         unique=True,
-        help_text="Digits only preferred; used for sign-in when set.",
+        help_text="Digits only; primary sign-in identifier (mirrored to username).",
     )
     home_station = models.ForeignKey(Station, null=True, blank=True, on_delete=models.SET_NULL, related_name="users")
     reliability_score = models.FloatField(default=0.5)
     reliability_events = models.PositiveIntegerField(default=0)
 
+    objects = CustomUserManager()
+
     class Meta:
         indexes = [models.Index(fields=["role", "is_active"])]
+
+    def save(self, *args, **kwargs):
+        if self.phone:
+            self.phone = normalize_phone(self.phone)
+            self.username = self.phone
+        super().save(*args, **kwargs)
 
 
 class TrainService(models.Model):

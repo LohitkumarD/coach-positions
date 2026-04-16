@@ -4,18 +4,22 @@ import json
 import time
 from datetime import timedelta
 
+from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import models, transaction
-from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from rest_framework import generics, permissions, status
 from rest_framework.parsers import MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
+from django_ratelimit.decorators import ratelimit
 from rest_framework.views import APIView
 
+from ops.forms import UserRegistrationForm
 from ops.models import (
     AlertEvent,
     AuditEvent,
@@ -55,6 +59,30 @@ def _create_audit(actor, action, entity_type, entity_id, payload):
         entity_id=str(entity_id),
         payload=payload,
     )
+
+
+@ratelimit(key="ip", rate="5/h", method="POST", block=True)
+def register(request: HttpRequest) -> HttpResponse:
+    if not getattr(settings, "ALLOW_OPEN_REGISTRATION", False):
+        raise Http404()
+    if request.method == "POST" and request.POST.get("company", "").strip():
+        return redirect("login")
+    if request.method == "POST":
+        form = UserRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            _create_audit(
+                None,
+                "register",
+                "user",
+                str(user.id),
+                {"phone": form.cleaned_data["phone"]},
+            )
+            messages.success(request, "Account created. Please login.")
+            return redirect("login")
+    else:
+        form = UserRegistrationForm()
+    return render(request, "registration/register.html", {"form": form})
 
 
 class HealthLiveView(APIView):

@@ -12,3 +12,5 @@ services:
         value: coach_position.settings
       - key: DJANGO_DEBUG
         value: "False"
+      - key: ALLOW_OPEN_REGISTRATION
+        value: "False"

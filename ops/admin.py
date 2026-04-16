@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils.translation import gettext_lazy as _
 
 from . import models
 
@@ -8,17 +9,33 @@ admin.site.register(models.Station)
 
 @admin.register(models.UserProfile)
 class UserProfileAdmin(BaseUserAdmin):
-    list_display = ("username", "phone", "email", "role", "is_staff", "is_active")
-    search_fields = ("username", "phone", "email")
-    fieldsets = BaseUserAdmin.fieldsets + (
-        ("Profile", {"fields": ("phone", "role", "home_station", "reliability_score", "reliability_events")}),
+    ordering = ("phone",)
+    list_display = ("phone", "email", "role", "is_staff", "is_active")
+    search_fields = ("phone", "email")
+    fieldsets = (
+        (None, {"fields": ("phone", "password")}),
+        (_("Personal info"), {"fields": ("first_name", "last_name", "email")}),
+        (
+            _("Permissions"),
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                ),
+            },
+        ),
+        (_("Important dates"), {"fields": ("last_login", "date_joined")}),
+        (_("Profile"), {"fields": ("role", "home_station", "reliability_score", "reliability_events")}),
     )
     add_fieldsets = (
         (
             None,
             {
                 "classes": ("wide",),
-                "fields": ("username", "password1", "password2", "phone", "role"),
+                "fields": ("phone", "password1", "password2", "role"),
             },
         ),
     )

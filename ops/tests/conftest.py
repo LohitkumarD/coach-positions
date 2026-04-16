@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from datetime import timedelta
 from django.contrib.auth import get_user_model
@@ -27,8 +29,18 @@ def user_factory(db, station_factory):
 
     def _make(**kwargs):
         station = kwargs.pop("home_station", station_factory(code=f"S{User.objects.count()+1}"))
+        idx = User.objects.count() + 1
+        explicit_username = kwargs.pop("username", None)
+        phone = kwargs.pop("phone", None)
+        if phone:
+            phone = re.sub(r"\D", "", phone)
+        elif explicit_username and len(re.sub(r"\D", "", explicit_username)) >= 10:
+            phone = re.sub(r"\D", "", explicit_username)
+        else:
+            phone = f"910{idx:07d}"
         payload = {
-            "username": kwargs.pop("username", f"user{User.objects.count()+1}"),
+            "username": phone,
+            "phone": phone,
             "role": kwargs.pop("role", "contributor"),
             "home_station": station,
             **kwargs,

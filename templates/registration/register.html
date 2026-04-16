@@ -1,0 +1,60 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Create account — Coach Position</title>
+  <link rel="manifest" href="{% static 'ops/manifest.json' %}" />
+  <link rel="stylesheet" href="{% static 'ops/mobile.css' %}" />
+</head>
+<body class="auth-page">
+  <header class="top-bar auth-header">
+    <div class="top-bar-inner">
+      <div>
+        <h1 class="auth-title">Coach Position</h1>
+        <p class="auth-subtitle">Create account</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="auth-main">
+    <section class="card login-card">
+      <form method="post" class="login-form" action="">
+        {% csrf_token %}
+        <div class="field">
+          <label for="id_phone">Phone number</label>
+          <input id="id_phone" name="phone" type="text" value="{{ form.phone.value|default_if_none:'' }}" autocomplete="tel" required inputmode="tel" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          {% if form.phone.errors %}<p class="login-error" role="alert">{{ form.phone.errors.0 }}</p>{% endif %}
+        </div>
+        <div class="field">
+          <label for="id_password1">Password</label>
+          <input id="id_password1" name="password1" type="password" autocomplete="new-password" required />
+          {% if form.password1.errors %}<p class="login-error" role="alert">{{ form.password1.errors.0 }}</p>{% endif %}
+        </div>
+        <div class="field">
+          <label for="id_password2">Confirm password</label>
+          <input id="id_password2" name="password2" type="password" autocomplete="new-password" required />
+          {% if form.password2.errors %}<p class="login-error" role="alert">{{ form.password2.errors.0 }}</p>{% endif %}
+        </div>
+        <div class="field">
+          <label for="id_email">Email (optional)</label>
+          <input id="id_email" name="email" type="email" value="{{ form.email.value|default_if_none:'' }}" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          {% if form.email.errors %}<p class="login-error" role="alert">{{ form.email.errors.0 }}</p>{% endif %}
+        </div>
+
+        <input type="text" name="company" value="" tabindex="-1" autocomplete="off" class="sr-only" aria-hidden="true" />
+
+        {% if form.non_field_errors %}
+          <p class="login-error" role="alert">{{ form.non_field_errors.0 }}</p>
+        {% endif %}
+
+        <button type="submit" class="login-submit btn-primary">Create account</button>
+      </form>
+      <p class="auth-footnote meta"><a href="{% url 'login' %}">Already have an account? Log in</a></p>
+    </section>
+    <p class="auth-footnote meta">Session-based login. Not an official railway system.</p>
+  </main>
+</body>
+</html>

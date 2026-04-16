@@ -21,11 +21,18 @@
 
   <main class="auth-main">
     <section class="card login-card">
+      {% if messages %}
+        <ul class="login-messages meta">
+          {% for message in messages %}
+            <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
       <form method="post" class="login-form" action="">
         {% csrf_token %}
         <div class="field">
-          <label for="id_username">Phone number or username</label>
-          <input id="id_username" name="username" type="text" autocomplete="username" required inputmode="tel" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="10-digit phone or staff ID" />
+          <label for="id_username">Phone number</label>
+          <input id="id_username" name="username" type="text" autocomplete="username" required inputmode="tel" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Enter mobile number" />
         </div>
         <div class="field">
           <label for="id_password">Password</label>
@@ -39,6 +46,7 @@
         <button type="submit" class="login-submit btn-primary">Sign in</button>
         <input type="hidden" name="next" value="{{ next }}" />
       </form>
+      <p class="auth-footnote meta"><a href="{% url 'register' %}">Create account</a></p>
     </section>
     <p class="auth-footnote meta">Session-based login. Not an official railway system.</p>
   </main>

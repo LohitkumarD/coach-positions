@@ -13,13 +13,10 @@ class PhoneOrUsernameBackend(ModelBackend):
         if not username or not password:
             return None
         username = username.strip()
+        digits_only = "".join(c for c in username if c.isdigit())
         user = UserModel.objects.filter(username__iexact=username).first()
-        if user is None:
-            digits = "".join(c for c in username if c.isdigit())
-            if len(digits) >= 10:
-                user = UserModel.objects.filter(phone=digits).first()
-            if user is None and username.isdigit() and len(username) >= 10:
-                user = UserModel.objects.filter(phone=username).first()
+        if user is None and len(digits_only) >= 10:
+            user = UserModel.objects.filter(phone=digits_only).first()
         if user and user.check_password(password) and self.user_can_authenticate(user):
             return user
         return None

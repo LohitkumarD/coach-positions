@@ -26,6 +26,7 @@ if (
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="unsafe-default-change-me")
 DEBUG = env("DJANGO_DEBUG")
+ALLOW_OPEN_REGISTRATION = env.bool("ALLOW_OPEN_REGISTRATION", default=False)
 ALLOWED_HOSTS = [x.strip() for x in env("DJANGO_ALLOWED_HOSTS", default="*").split(",") if x.strip()]
 CSRF_TRUSTED_ORIGINS = [x.strip() for x in env("CSRF_TRUSTED_ORIGINS", default="").split(",") if x.strip()]
 if DEBUG and not CSRF_TRUSTED_ORIGINS:
