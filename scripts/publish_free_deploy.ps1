@@ -33,7 +33,9 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-if (git remote get-url origin 2>$null) {
+# Do not use `git remote get-url origin` when origin is absent: git writes to stderr and Stop breaks the script.
+$remotes = @(git remote 2>$null)
+if ($remotes -contains "origin") {
     Write-Host "Remote 'origin' already set. Pushing..."
     git push -u origin HEAD
 } else {
@@ -43,8 +45,8 @@ if (git remote get-url origin 2>$null) {
 
 Write-Host ""
 Write-Host "GitHub push done. Next (browser):" -ForegroundColor Green
-Write-Host "  1. Neon (free Postgres): https://console.neon.tech — create project, copy DATABASE_URL"
-Write-Host "  2. Render: https://dashboard.render.com — New > Blueprint, connect this repo"
+Write-Host "  1. Neon (free Postgres): https://console.neon.tech - create project, copy DATABASE_URL"
+Write-Host "  2. Render: https://dashboard.render.com - New > Blueprint, connect this repo"
 Write-Host "  3. In the web service Environment, set:"
 Write-Host "       DATABASE_URL   (from Neon)"
 Write-Host "       DJANGO_SECRET_KEY   (long random string)"
