@@ -47,4 +47,6 @@ def test_explain_returns_latest_snapshot(user_factory, train_service_factory):
     client.force_authenticate(user=user)
     res = client.get(f"/api/v1/decisions/{service.id}/explain")
     assert res.status_code == 200
-    assert res.json()["id"] == latest.id
+    data = res.json()
+    assert data["id"] == latest.id
+    assert data["support_count"] == 2

@@ -10,9 +10,137 @@ const explainSheet = document.getElementById("explainSheet");
 const explainBackdrop = document.getElementById("explainBackdrop");
 const explainClose = document.getElementById("explainClose");
 const explainBody = document.getElementById("explainBody");
+const explainFooter = document.getElementById("explainFooter");
+const explainConfirm = document.getElementById("explainConfirm");
 
 let currentTrainQuery = "";
 let lastAlertId = 0;
+let explainTrainServiceId = null;
+
+function boardToast(message, variant, durationMs) {
+  const root = document.getElementById("toastRoot");
+  if (!root) return;
+  const ms = typeof durationMs === "number" && durationMs > 0 ? durationMs : 4200;
+  const el = document.createElement("div");
+  el.className = `toast toast--${variant || "info"}`;
+  el.textContent = message;
+  root.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("toast--show"));
+  setTimeout(() => {
+    el.classList.remove("toast--show");
+    setTimeout(() => el.remove(), 300);
+  }, ms);
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const REASON_LABELS = {
+  MAJORITY_MATCH: "Several independent reports pointed at this same coach order.",
+  NEAR_STATION_SUPPORT: "Reports came from stations that are close on this train's route.",
+  HIGH_RELIABILITY_SUPPORT: "People who usually report reliably supported this reading.",
+  RUNNER_UP_GAP: "This order scored clearly ahead of the next-best alternative.",
+};
+
+const METRIC_LABELS = {
+  freqScore: "Different reporters",
+  sourceScore: "How trustworthy the report types are (field check, TTE, etc.)",
+  freshnessScore: "How recent the sightings are",
+  proximityScore: "How close the reporting station is on the route",
+  contributorScore: "Reporter track record",
+  penaltyScore: "Penalty if any line was marked invalid",
+};
+
+function explainBandCopy(band, score) {
+  const b = String(band || "low").toLowerCase();
+  const s = score != null && score !== "" ? Number(score) : NaN;
+  const gap = Number.isFinite(s) ? `The gap between the top choice and the runner-up is ${s}.` : "";
+  let title = "Confidence";
+  let text = "";
+  if (b === "high") {
+    title = "High confidence";
+    text =
+      "Enough agreement and separation from other readings that you can normally rely on this list for operations. " +
+      gap;
+  } else if (b === "medium") {
+    title = "Medium confidence";
+    text =
+      "Usually fine to use, but glance at the coach list once more before you announce it, especially if the train is about to arrive. " +
+      gap;
+  } else {
+    title = "Low confidence";
+    text =
+      "There are not many matching reports, or another coach order is almost as likely. Treat this as a draft — verify with a second source or a fresh walk-through before you announce. " +
+      gap;
+  }
+  return { title, text, bandClass: b === "high" ? "high" : b === "medium" ? "medium" : "low" };
+}
+
+function renderScoreTable(breakup) {
+  if (!breakup || typeof breakup !== "object") return "";
+  const rows = [];
+  for (const [k, v] of Object.entries(breakup)) {
+    const label = METRIC_LABELS[k] || k;
+    const num = typeof v === "number" ? (Math.abs(v) < 30 && String(v).includes(".") ? v.toFixed(2) : String(v)) : escapeHtml(String(v));
+    rows.push(`<tr><th scope="row">${escapeHtml(label)}</th><td>${num}</td></tr>`);
+  }
+  if (!rows.length) return "";
+  return `<table class="explain-metrics"><tbody>${rows.join("")}</tbody></table>`;
+}
+
+function buildExplainHtml(d) {
+  const seq = Array.isArray(d.selected_sequence) ? d.selected_sequence.join(" ") : "";
+  const band = explainBandCopy(d.confidence_band, d.confidence_score);
+  const codes = Array.isArray(d.reason_codes) ? d.reason_codes : [];
+  const bullets = codes
+    .map((c) => {
+      const label = REASON_LABELS[c];
+      return label ? `<li>${escapeHtml(label)}</li>` : `<li><code>${escapeHtml(c)}</code></li>`;
+    })
+    .join("");
+  const top = d.reason_details && d.reason_details.topScoreBreakup;
+  const runner = d.reason_details && d.reason_details.runnerUpScoreBreakup;
+  const support = typeof d.support_count === "number" ? d.support_count : null;
+  const supportLine =
+    support != null
+      ? `<p class="meta" style="margin:0 0 10px"><strong>Matching reports</strong> ${support}</p>`
+      : "";
+  const technicalJson =
+    d.reason_details && typeof d.reason_details === "object"
+      ? JSON.stringify(d.reason_details, null, 2)
+      : String(d.reason_details || "—");
+  const runnerBlock =
+    runner && typeof runner === "object" && Object.keys(runner).length
+      ? `<h3 class="explain-band__title" style="margin:14px 0 6px;font-size:15px">Runner-up (for supervisors)</h3>${renderScoreTable(runner)}`
+      : "";
+  return `
+    <div class="explain-band explain-band--${band.bandClass}">
+      <h3 class="explain-band__title">${escapeHtml(band.title)}</h3>
+      <p class="explain-band__text">${escapeHtml(band.text)}</p>
+    </div>
+    ${supportLine}
+    <p class="meta" style="margin:0 0 6px"><strong>Coach order shown on the board</strong></p>
+    <p class="explain-seq">${escapeHtml(seq || "—")}</p>
+    ${
+      bullets
+        ? `<p class="meta" style="margin:0 0 6px"><strong>Why the system leaned this way</strong></p><ul class="explain-bullets">${bullets}</ul>`
+        : `<p class="meta">No extra reason flags beyond the scores below.</p>`
+    }
+    <h3 class="explain-band__title" style="margin:14px 0 6px;font-size:15px">How the score was built</h3>
+    ${renderScoreTable(top)}
+    ${runnerBlock}
+    <details class="explain-technical">
+      <summary>Technical details (JSON)</summary>
+      <pre class="explain-pre">${escapeHtml(technicalJson)}</pre>
+    </details>
+    <p class="meta" style="margin:12px 0 0">Effective: ${d.effective_at ? escapeHtml(new Date(d.effective_at).toLocaleString()) : "—"}</p>
+  `;
+}
 
 function confidenceClass(conf) {
   if (conf === "high") return "high";
@@ -154,6 +282,8 @@ function loadTrainQueryPreference() {
 
 async function openExplain(trainServiceId) {
   if (!explainSheet || !explainBody) return;
+  explainTrainServiceId = trainServiceId;
+  if (explainFooter) explainFooter.hidden = true;
   explainBody.textContent = "Loading…";
   explainSheet.hidden = false;
   try {
@@ -163,19 +293,12 @@ async function openExplain(trainServiceId) {
       return;
     }
     const d = await res.json();
-    const seq = (d.selected_sequence || []).join(" ");
-    const reasons = (d.reason_codes || []).join(", ") || "—";
-    const details =
-      d.reason_details && typeof d.reason_details === "object"
-        ? JSON.stringify(d.reason_details, null, 2)
-        : d.reason_details || "—";
-    explainBody.innerHTML = `
-      <p><strong>Confidence</strong> ${d.confidence_band} (${d.confidence_score})</p>
-      <p><strong>Composition</strong> ${seq || "—"}</p>
-      <p><strong>Reason codes</strong> ${reasons}</p>
-      <pre class="explain-pre">${details}</pre>
-      <p class="meta">Effective: ${d.effective_at ? new Date(d.effective_at).toLocaleString() : "—"}</p>
-    `;
+    explainBody.innerHTML = buildExplainHtml(d);
+    if (explainFooter) {
+      explainFooter.hidden = false;
+      explainFooter.dataset.trainServiceId = String(trainServiceId);
+      explainFooter.dataset.snapshotId = String(d.id != null ? d.id : "");
+    }
   } catch (e) {
     explainBody.textContent = e.message || "Could not load explanation.";
   }
@@ -183,10 +306,27 @@ async function openExplain(trainServiceId) {
 
 function closeExplain() {
   if (explainSheet) explainSheet.hidden = true;
+  if (explainFooter) explainFooter.hidden = true;
 }
 
 if (explainBackdrop) explainBackdrop.addEventListener("click", closeExplain);
 if (explainClose) explainClose.addEventListener("click", closeExplain);
+
+if (explainConfirm && explainFooter) {
+  explainConfirm.addEventListener("click", () => {
+    const tid = explainFooter.dataset.trainServiceId;
+    const sid = explainFooter.dataset.snapshotId;
+    if (tid && sid) {
+      try {
+        sessionStorage.setItem(`coach_board_explain_ack_${tid}_${sid}`, new Date().toISOString());
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    closeExplain();
+    boardToast("Recorded — you confirmed you read this summary. It does not change the published composition.", "success", 4500);
+  });
+}
 
 loadBtn.addEventListener("click", async () => {
   currentTrainQuery = stationInput.value.replace(/\s+/g, "").trim();

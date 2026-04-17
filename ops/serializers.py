@@ -164,6 +164,7 @@ class AlertEventSerializer(serializers.ModelSerializer):
 class DecisionExplainSerializer(serializers.ModelSerializer):
     selected_sequence = serializers.SerializerMethodField()
     selected_signature = serializers.SerializerMethodField()
+    support_count = serializers.SerializerMethodField()
 
     class Meta:
         model = DecisionSnapshot
@@ -177,6 +178,7 @@ class DecisionExplainSerializer(serializers.ModelSerializer):
             "effective_at",
             "selected_sequence",
             "selected_signature",
+            "support_count",
         ]
 
     def get_selected_sequence(self, obj: DecisionSnapshot):
@@ -184,6 +186,10 @@ class DecisionExplainSerializer(serializers.ModelSerializer):
 
     def get_selected_signature(self, obj: DecisionSnapshot):
         return obj.selected_candidate.sequence_signature
+
+    def get_support_count(self, obj: DecisionSnapshot) -> int:
+        c = obj.selected_candidate
+        return int(c.support_count) if c else 0
 
 
 class DeviceTokenSerializer(serializers.ModelSerializer):

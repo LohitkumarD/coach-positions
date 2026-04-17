@@ -21,7 +21,13 @@
       <h2 id="explainTitle" class="sheet__title">Why this composition?</h2>
       <button type="button" class="sheet__close" id="explainClose" aria-label="Close">×</button>
     </div>
-    <div id="explainBody" class="sheet__body meta"></div>
+    <div id="explainBody" class="sheet__body"></div>
+    <div id="explainFooter" class="sheet__footer" hidden>
+      <button type="button" class="btn-primary sheet__primary-action" id="explainConfirm">
+        I've reviewed this
+      </button>
+      <p class="sheet__footer-hint meta">Confirms you have read this summary for your own workflow. It does not change the published composition.</p>
+    </div>
   </div>
 </div>
 {% endblock %}
