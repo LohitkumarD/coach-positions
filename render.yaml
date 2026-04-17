@@ -13,4 +13,4 @@ services:
       - key: DJANGO_DEBUG
         value: "False"
       - key: ALLOW_OPEN_REGISTRATION
-        value: "False"
+        value: "True"

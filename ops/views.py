@@ -64,7 +64,16 @@ def _create_audit(actor, action, entity_type, entity_id, payload):
 @ratelimit(key="ip", rate="5/h", method="POST", block=True)
 def register(request: HttpRequest) -> HttpResponse:
     if not getattr(settings, "ALLOW_OPEN_REGISTRATION", False):
-        raise Http404()
+        # 403 so users do not confuse "feature off" with a missing URL (404).
+        return HttpResponse(
+            "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Registration closed</title></head>"
+            "<body style='font-family:sans-serif;padding:2rem;'><h1>Registration closed</h1>"
+            "<p>Self-service signup is disabled on this server. Ask an administrator to enable "
+            "<code>ALLOW_OPEN_REGISTRATION</code> or create your account.</p>"
+            "<p><a href='/accounts/login/'>Back to sign in</a></p></body></html>",
+            status=403,
+            content_type="text/html; charset=utf-8",
+        )
     if request.method == "POST" and request.POST.get("company", "").strip():
         return redirect("login")
     if request.method == "POST":

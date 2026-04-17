@@ -138,11 +138,14 @@ def test_registration_role_cannot_be_overridden():
 
 
 @override_settings(ALLOW_OPEN_REGISTRATION=False)
-def test_registration_disabled_returns_404():
+def test_registration_disabled_returns_403():
     client = Client()
     url = reverse("register")
-    assert client.get(url).status_code == 404
-    assert client.post(url, {"phone": "916666666666", "password1": REG_PASSWORD, "password2": REG_PASSWORD}).status_code == 404
+    assert client.get(url).status_code == 403
+    assert (
+        client.post(url, {"phone": "916666666666", "password1": REG_PASSWORD, "password2": REG_PASSWORD}).status_code
+        == 403
+    )
 
 
 @override_settings(ALLOW_OPEN_REGISTRATION=True, RATELIMIT_ENABLE=True)
