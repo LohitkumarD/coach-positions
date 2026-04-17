@@ -516,17 +516,53 @@
     syncAiSectionVisibility();
   }
 
+  /** Digits-only train number for comparing typed number vs dropdown label. */
+  function digitsOnlyTrainNo(s) {
+    return String(s || "").replace(/[^\d]/g, "");
+  }
+
+  /** Train number from the current dropdown label (before "—"). */
+  function listSelectionTrainNo() {
+    const opt = trainOptions.options[trainOptions.selectedIndex];
+    if (!opt || !opt.value) return "";
+    const head = (opt.textContent || "").split("—")[0].trim();
+    return digitsOnlyTrainNo(head);
+  }
+
+  /**
+   * Bottom preview must follow Train No * (trainNoHint), not a stale optional service row.
+   * Dropdown is only shown when it matches the typed number or when the number field is empty.
+   */
   function updateStickyPreview() {
     if (!stickyPreview) return;
-    let trainPart =
-      trainOptions.options[trainOptions.selectedIndex]?.textContent ||
-      selectedTrainMeta.textContent ||
-      "";
-    trainPart = trainPart.replace(/^Selected train:\s*/i, "").trim();
-    if (!trainPart || trainPart.includes("No train found")) {
-      const hint = trainNoHint.value.trim() || trainSearchInput.value.trim();
-      trainPart = hint || "—";
+    const hint = trainNoHint.value.trim();
+    const nameHint = trainNameHint.value.trim();
+    const hintDigits = digitsOnlyTrainNo(hint);
+    const listDigits = listSelectionTrainNo();
+    const svcId = trainServiceIdInput.value.trim();
+    const opt = trainOptions.options[trainOptions.selectedIndex];
+    const optText = opt && opt.value ? String(opt.textContent || "").trim() : "";
+
+    let trainPart = "—";
+    if (hint) {
+      if (svcId && hintDigits && listDigits && hintDigits === listDigits && optText) {
+        trainPart = optText;
+      } else if (nameHint) {
+        trainPart = `${hint} — ${nameHint}`;
+      } else {
+        trainPart = hint;
+      }
+    } else {
+      let fromList = optText || String(selectedTrainMeta.textContent || "").trim();
+      fromList = fromList.replace(/^Selected train:\s*/i, "").trim();
+      if (fromList && !fromList.includes("No train found") && !fromList.includes("Optional —")) {
+        trainPart = fromList;
+      } else {
+        const search = trainSearchInput.value.trim();
+        trainPart = search || "—";
+      }
     }
+
     const seq = sequenceInput.value.trim() || "—";
     stickyPreview.textContent = "";
     const lineTrain = document.createElement("div");
@@ -547,19 +583,6 @@
     }
     const t = String(label);
     selectedTrainMeta.textContent = t.length > 64 ? `${t.slice(0, 61)}…` : t;
-  }
-
-  /** Digits-only train number for comparing typed number vs dropdown label. */
-  function digitsOnlyTrainNo(s) {
-    return String(s || "").replace(/[^\d]/g, "");
-  }
-
-  /** Train number from the current dropdown label (before "—"). */
-  function listSelectionTrainNo() {
-    const opt = trainOptions.options[trainOptions.selectedIndex];
-    if (!opt || !opt.value) return "";
-    const head = (opt.textContent || "").split("—")[0].trim();
-    return digitsOnlyTrainNo(head);
   }
 
   /** Clear linked TrainService so submit uses the number field, not a stale hidden id. */
@@ -587,6 +610,7 @@
       trainOptions.appendChild(opt);
       setTrainSelection("", "");
       if (emptyTrainHint) emptyTrainHint.hidden = false;
+      updateStickyPreview();
       return;
     }
     if (emptyTrainHint) emptyTrainHint.hidden = true;
@@ -616,6 +640,12 @@
       trainOptions.value = "";
       setTrainSelection("", "");
     }
+    const hdAfter = digitsOnlyTrainNo(trainNoHint.value.trim());
+    const ldAfter = listSelectionTrainNo();
+    if (trainServiceIdInput.value.trim() && hdAfter && ldAfter && hdAfter !== ldAfter) {
+      resetTrainServicePickUi();
+    }
+    updateStickyPreview();
   }
 
   async function loadTrainServices() {
@@ -713,7 +743,7 @@
       det.className = "pro-details pro-details--block";
       const sum = document.createElement("summary");
       sum.className = "pro-details__summary";
-      sum.textContent = "Why?";
+      sum.textContent = "Scan notes";
       const body = document.createElement("div");
       body.className = "pro-details__body";
       body.textContent = String(state.aiNotes);
@@ -1125,6 +1155,11 @@
           }
           const sel = trainOptions.options[trainOptions.selectedIndex];
           setTrainSelection(String(tid), sel ? sel.textContent : "");
+          const hdT = digitsOnlyTrainNo(trainNoHint.value.trim());
+          const ldT = listSelectionTrainNo();
+          if (trainServiceIdInput.value.trim() && hdT && ldT && hdT !== ldT) {
+            resetTrainServicePickUi();
+          }
           syncSequenceInput();
           fetchLastKnown();
           saveDraft();
@@ -1679,10 +1714,19 @@
     updateDefaultsStatus();
   });
   trainNoHint.addEventListener("input", () => {
+    const hint = trainNoHint.value.trim();
+    const hd = digitsOnlyTrainNo(hint);
+    const ld = listSelectionTrainNo();
+    if (trainServiceIdInput.value.trim() && hd && ld && hd !== ld) {
+      resetTrainServicePickUi();
+    }
     saveDraft();
     syncSequenceInput();
   });
-  trainNameHint.addEventListener("input", saveDraft);
+  trainNameHint.addEventListener("input", () => {
+    saveDraft();
+    syncSequenceInput();
+  });
   journeyHint.addEventListener("change", saveDraft);
 
   btnApplyLastKnown.addEventListener("click", applyLastKnown);

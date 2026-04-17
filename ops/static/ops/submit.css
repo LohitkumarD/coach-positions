@@ -40,9 +40,9 @@
   margin: 0 auto;
 }
 
-/* Extra space for sticky preview + actions when edit screen is open */
+/* Extra space for sticky preview + actions + bottom nav when edit screen is open */
 .submit-app:has(#screenEdit:not([hidden])) {
-  padding-bottom: 118px;
+  padding-bottom: calc(118px + var(--nav-h) + var(--safe-bottom));
 }
 
 .submit-app input,
@@ -182,6 +182,7 @@
 .btn-inline--apply {
   flex: 0 0 auto;
   min-height: 36px;
+  min-width: 0;
   padding: 6px 12px;
   font-size: 0.8125rem;
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
@@ -201,6 +202,7 @@
 
 .btn-inline--speed {
   min-height: 38px;
+  min-width: 0;
   padding: 6px 10px;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -543,6 +545,8 @@
   justify-content: center;
   padding: 8px 14px;
   min-height: 40px;
+  min-width: 0;
+  max-width: 100%;
   font-size: 0.875rem;
   font-weight: 600;
   border-radius: 10px;
@@ -550,6 +554,7 @@
   background: var(--bg-card);
   cursor: pointer;
   margin: 4px 4px 4px 0;
+  box-sizing: border-box;
 }
 
 .submit-app .btn-inline:focus-visible,
@@ -725,6 +730,30 @@
   border: 1px solid #dbe2ea;
   cursor: default;
   touch-action: manipulation;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/*
+ * Global mobile.css sets button { min-width: 96px }. Coach rows use a tight grid;
+ * without this reset the drag handle and delete button overflow and overlap the token.
+ */
+.submit-app .chip-row .chip-drag,
+.submit-app .chip-row .chip-remove {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.submit-app .chip-row .chip-drag {
+  width: 100%;
+}
+
+.submit-app .chip-row .chip-remove {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  max-width: 2.25rem;
+  padding: 0;
 }
 
 .chip-index {
@@ -962,7 +991,8 @@
 
 .submit-sticky {
   position: sticky;
-  bottom: 0;
+  /* Sit above fixed bottom nav (mobile.css --nav-h), not behind it */
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
   z-index: 4;
   margin: 16px -12px -12px;
   padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0));
