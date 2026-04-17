@@ -46,7 +46,7 @@ function renderTrainSearchResults(rows, options) {
   }
   const heading = isFiltered
     ? `<p class="meta board-list-caption"><strong>${rows.length}</strong> matching train(s)</p>`
-    : `<p class="meta board-list-caption">Showing up to <strong>${rows.length}</strong> train(s), newest journey first. Use the box to filter.</p>`;
+    : `<p class="meta board-list-caption">Showing up to <strong>${rows.length}</strong> train(s), most recently updated first. Use the box to filter.</p>`;
   boardCards.innerHTML =
     heading +
     rows
