@@ -32,6 +32,237 @@ function confidenceClass(conf) {
   return "low";
 }
 
+function escapeHtmlBoard(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** CSS modifier class for coach colour (Indian coaching stock). */
+function boardCoachStyleClass(tok) {
+  const t = String(tok).trim().toUpperCase();
+  if (!t) return "board-coach--other";
+  if (t === "ENG" || t === "LP") return "board-coach--eng";
+  if (/^SLRD/.test(t)) return "board-coach--slrd";
+  if (/^PC/.test(t)) return "board-coach--pc";
+  if (/^GEN|^GS|^UR|^EOG/.test(t)) return "board-coach--gen";
+  if (/^H\d|^HA\d/.test(t)) return "board-coach--first";
+  if (/^A\d/.test(t)) return "board-coach--a";
+  if (/^B\d/.test(t)) return "board-coach--b";
+  if (/^D\d/.test(t)) return "board-coach--d";
+  if (/^C\d|^EC\d/.test(t)) return "board-coach--chair";
+  if (/^M\d/.test(t)) return "board-coach--m";
+  if (/^S\d/.test(t)) return "board-coach--s";
+  if (/^LPR/.test(t)) return "board-coach--lpr";
+  return "board-coach--other";
+}
+
+/** Same grouping as HTML strip; used by canvas export. */
+function buildCoachRuns(tokens) {
+  const arr = Array.isArray(tokens) ? tokens.map((x) => String(x).trim()).filter(Boolean) : [];
+  if (!arr.length) return [];
+  const runs = [];
+  let currentClass = null;
+  let current = [];
+  arr.forEach((tok, idx) => {
+    const pos = idx + 1;
+    const cls = boardCoachStyleClass(tok);
+    if (current.length && cls !== currentClass) {
+      runs.push({ cls: currentClass, items: current });
+      current = [];
+    }
+    currentClass = cls;
+    current.push({ pos, tok });
+  });
+  if (current.length) runs.push({ cls: currentClass, items: current });
+  return runs;
+}
+
+/** Canvas / PNG colours — keep in sync with mobile.css `.board-coach--*`. */
+const BOARD_COACH_PNG_PALETTE = {
+  eng: { fill: "#1d4ed8", stroke: "#1e40af", text: "#f8fafc", numFill: "rgba(255,255,255,0.28)", numText: "#ffffff" },
+  slrd: { fill: "#ede9fe", stroke: "#c4b5fd", text: "#5b21b6", numFill: "rgba(91,33,182,0.15)", numText: "#5b21b6" },
+  pc: { fill: "#ccfbf1", stroke: "#5eead4", text: "#0f766e", numFill: "rgba(15,118,110,0.12)", numText: "#0f766e" },
+  gen: { fill: "#e2e8f0", stroke: "#cbd5e1", text: "#334155", numFill: "rgba(51,65,85,0.12)", numText: "#334155" },
+  first: { fill: "#fce7f3", stroke: "#f9a8d4", text: "#9d174d", numFill: "rgba(157,23,77,0.12)", numText: "#9d174d" },
+  a: { fill: "#dcfce7", stroke: "#86efac", text: "#14532d", numFill: "rgba(20,83,45,0.12)", numText: "#14532d" },
+  b: { fill: "#dbeafe", stroke: "#93c5fd", text: "#1e3a8a", numFill: "rgba(30,58,138,0.12)", numText: "#1e3a8a" },
+  d: { fill: "#e0f2fe", stroke: "#7dd3fc", text: "#075985", numFill: "rgba(7,89,133,0.12)", numText: "#075985" },
+  chair: { fill: "#cffafe", stroke: "#67e8f9", text: "#0e7490", numFill: "rgba(14,116,144,0.12)", numText: "#0e7490" },
+  m: { fill: "#fef3c7", stroke: "#fcd34d", text: "#92400e", numFill: "rgba(146,64,14,0.12)", numText: "#92400e" },
+  s: { fill: "#f3e8ff", stroke: "#d8b4fe", text: "#6b21a8", numFill: "rgba(107,33,168,0.12)", numText: "#6b21a8" },
+  lpr: { fill: "#ffedd5", stroke: "#fdba74", text: "#9a3412", numFill: "rgba(154,52,18,0.12)", numText: "#9a3412" },
+  other: { fill: "#f1f5f9", stroke: "#e2e8f0", text: "#475569", numFill: "rgba(71,85,105,0.12)", numText: "#475569" },
+};
+
+function coachClassToPaletteKey(cls) {
+  return String(cls || "").replace(/^board-coach--/, "") || "other";
+}
+
+function canvasRoundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  if (typeof ctx.roundRect === "function") {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, rr);
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+}
+
+/**
+ * Measure vertical space needed for coach chips (same wrapping as draw).
+ */
+function measureCoachStripHeight(ctx, pad, maxW, tokens) {
+  const runs = buildCoachRuns(tokens);
+  if (!runs.length) return 28;
+  const gapChip = 5;
+  const gapRun = 8;
+  const lineGap = 8;
+  const chipFont = 'bold 13px system-ui, "Segoe UI", Roboto, sans-serif';
+  ctx.font = chipFont;
+  let x = pad;
+  let y = 0;
+  let rowH = 0;
+  function newLine() {
+    x = pad;
+    y += rowH + lineGap;
+    rowH = 0;
+  }
+  for (let ri = 0; ri < runs.length; ri += 1) {
+    const run = runs[ri];
+    if (ri > 0) {
+      if (x > pad && x + gapRun + 40 > pad + maxW) newLine();
+      else x += gapRun;
+    }
+    for (const { tok } of run.items) {
+      const codeW = ctx.measureText(tok).width;
+      const numW = 22;
+      const chipW = 5 + numW + 6 + codeW + 9;
+      const chipH = 30;
+      if (x > pad && x + chipW > pad + maxW) newLine();
+      x += chipW + gapChip;
+      rowH = Math.max(rowH, chipH);
+    }
+  }
+  return y + rowH + 12;
+}
+
+/**
+ * Draw coach chips (matches board CSS). Returns bottom Y (exclusive padding below strip).
+ */
+function drawCoachStripCanvas(ctx, pad, maxW, yStart, tokens) {
+  const runs = buildCoachRuns(tokens);
+  if (!runs.length) {
+    ctx.fillStyle = "#64748b";
+    ctx.font = '16px system-ui, "Segoe UI", Roboto, sans-serif';
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillText("—", pad, yStart);
+    return yStart + 22;
+  }
+
+  const gapChip = 5;
+  const gapRun = 8;
+  const lineGap = 8;
+  const chipR = 8;
+  const numR = 5;
+  const chipFont = 'bold 13px system-ui, "Segoe UI", Roboto, sans-serif';
+  const numFont = 'bold 10px system-ui, "Segoe UI", Roboto, sans-serif';
+
+  let x = pad;
+  let y = yStart;
+  let rowH = 0;
+
+  function newLine() {
+    x = pad;
+    y += rowH + lineGap;
+    rowH = 0;
+  }
+
+  for (let ri = 0; ri < runs.length; ri += 1) {
+    const run = runs[ri];
+    if (ri > 0) {
+      if (x > pad && x + gapRun + 40 > pad + maxW) newLine();
+      else x += gapRun;
+    }
+    for (const { pos, tok } of run.items) {
+      const key = coachClassToPaletteKey(run.cls);
+      const pal = BOARD_COACH_PNG_PALETTE[key] || BOARD_COACH_PNG_PALETTE.other;
+
+      ctx.font = chipFont;
+      const codeW = ctx.measureText(tok).width;
+      const numW = 22;
+      const chipW = 5 + numW + 6 + codeW + 9;
+      const chipH = 30;
+
+      if (x > pad && x + chipW > pad + maxW) newLine();
+
+      const drawX = x;
+      const drawY = y;
+
+      ctx.fillStyle = pal.fill;
+      ctx.strokeStyle = pal.stroke;
+      ctx.lineWidth = 1;
+      canvasRoundRect(ctx, drawX, drawY, chipW, chipH, chipR);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = pal.numFill;
+      canvasRoundRect(ctx, drawX + 5, drawY + 5, numW, chipH - 10, numR);
+      ctx.fill();
+
+      ctx.fillStyle = pal.numText;
+      ctx.font = numFont;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(pos), drawX + 5 + numW / 2, drawY + chipH / 2);
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = pal.text;
+      ctx.font = chipFont;
+      ctx.fillText(tok, drawX + 5 + numW + 6, drawY + 7);
+
+      x += chipW + gapChip;
+      rowH = Math.max(rowH, chipH);
+    }
+  }
+
+  return y + rowH;
+}
+
+/**
+ * Visual coach strip: numbered positions, colour by type, consecutive same-type in one group.
+ */
+function buildBoardSequenceHtml(tokens) {
+  const arr = Array.isArray(tokens) ? tokens.map((x) => String(x).trim()).filter(Boolean) : [];
+  if (!arr.length) {
+    return '<div class="board-coach-strip board-coach-strip--empty" aria-label="Coach order"><span class="seq seq--plain">—</span></div>';
+  }
+  const runs = buildCoachRuns(tokens);
+
+  const inner = runs
+    .map((run) => {
+      const chips = run.items
+        .map(
+          ({ pos, tok }) =>
+            `<span class="board-coach ${run.cls}"><span class="board-coach__num">${pos}</span><span class="board-coach__code">${escapeHtmlBoard(tok)}</span></span>`
+        )
+        .join("");
+      return `<div class="board-coach-run" role="group">${chips}</div>`;
+    })
+    .join("");
+  return `<div class="board-coach-strip" aria-label="Coach order from engine to tail">${inner}</div>`;
+}
+
 function formatDt(iso) {
   if (!iso) return "—";
   try {
@@ -74,6 +305,63 @@ function wrapIntoLines(ctx, text, maxWidth) {
   return lines.length ? lines : ["—"];
 }
 
+/** Highlighted train number + name for PNG (matches board card). Returns Y below block. */
+function drawTrainTitleCanvas(ctx, pad, maxW, yStart, trainNo, trainName) {
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  const no = String(trainNo || "").trim();
+  const nm = String(trainName || "").trim();
+  let y = yStart;
+
+  if (no) {
+    const noFont = 'bold 30px system-ui, "Segoe UI", Roboto, sans-serif';
+    ctx.font = noFont;
+    const nw = ctx.measureText(no).width;
+    const boxH = 36;
+    ctx.fillStyle = "rgba(37, 99, 235, 0.16)";
+    canvasRoundRect(ctx, pad - 6, y - 2, nw + 14, boxH + 6, 10);
+    ctx.fill();
+    ctx.fillStyle = "#1d4ed8";
+    ctx.fillText(no, pad, y);
+    if (nm) {
+      const nmFont = 'bold 22px system-ui, "Segoe UI", Roboto, sans-serif';
+      ctx.font = nmFont;
+      const gap = 14;
+      const nx = pad + nw + gap;
+      const nmW = ctx.measureText(nm).width;
+      if (nx + nmW <= pad + maxW) {
+        ctx.fillStyle = "#0f172a";
+        ctx.fillText(nm, nx, y + 5);
+      } else {
+        y += boxH + 10;
+        ctx.fillStyle = "#0f172a";
+        const lines = wrapIntoLines(ctx, nm, maxW);
+        for (const line of lines) {
+          ctx.fillText(line, pad, y);
+          y += 26;
+        }
+        return y + 6;
+      }
+    }
+    y += boxH + 10;
+    return y;
+  }
+  if (nm) {
+    ctx.font = 'bold 22px system-ui, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = "#0f172a";
+    const lines = wrapIntoLines(ctx, nm, maxW);
+    for (const line of lines) {
+      ctx.fillText(line, pad, y);
+      y += 28;
+    }
+    return y + 6;
+  }
+  ctx.font = 'bold 26px system-ui, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = "#64748b";
+  ctx.fillText("Train", pad, y);
+  return y + 34;
+}
+
 function drawBoardCardCanvas(row) {
   const W = 920;
   const pad = 28;
@@ -82,10 +370,8 @@ function drawBoardCardCanvas(row) {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
 
-  const title = `${row.trainNo || ""} ${row.trainName || ""}`.trim() || "Train";
-  ctx.font = 'bold 24px system-ui, "Segoe UI", Roboto, sans-serif';
-  const titleLines = wrapIntoLines(ctx, title, maxW);
-
+  const trainNo = row.trainNo || "";
+  const trainName = row.trainName || "";
   const metaLines = [
     `Updated: ${formatDt(row.lastUpdatedAt)}`,
     `Reporter phone: ${row.updatedByPhone || "—"}`,
@@ -93,28 +379,33 @@ function drawBoardCardCanvas(row) {
     `Journey date: ${row.journeyDate || "—"}`,
   ];
 
-  const seq = (row.selectedSequence || []).join(" ");
-  ctx.font = 'bold 18px system-ui, "Segoe UI", Roboto, sans-serif';
-  const seqLines = wrapIntoLines(ctx, seq || "—", maxW);
-
-  const coachCount = `Coaches: ${(row.selectedSequence || []).length} positions`;
+  const coachCount = trainNo
+    ? `Train ${trainNo} · ${(row.selectedSequence || []).length} positions`
+    : `Coaches: ${(row.selectedSequence || []).length} positions`;
   const confLine = `Confidence: ${String(row.confidenceBand || "low").toUpperCase()}`;
   const footer = "Shared from the board — verify before announcing.";
 
-  const lhTitle = 32;
   const lhMeta = 22;
-  const lhSeq = 24;
   const lhSmall = 20;
+
+  const measureCanvas = document.createElement("canvas");
+  measureCanvas.width = W;
+  measureCanvas.height = 800;
+  const mctx = measureCanvas.getContext("2d");
+  if (!mctx) throw new Error("Canvas not supported");
+  const titleBlockH = drawTrainTitleCanvas(mctx, pad, maxW, 0, trainNo, trainName);
+  const coachH = measureCoachStripHeight(mctx, pad, maxW, row.selectedSequence || []);
 
   const H =
     pad +
-    titleLines.length * lhTitle +
-    12 +
+    titleBlockH +
+    10 +
     metaLines.length * lhMeta +
-    16 +
-    seqLines.length * lhSeq +
+    10 +
+    coachH +
+    8 +
     lhSmall * 2 +
-    36 +
+    28 +
     pad;
 
   canvas.width = W;
@@ -124,12 +415,7 @@ function drawBoardCardCanvas(row) {
   ctx.textBaseline = "top";
 
   let y = pad;
-  ctx.fillStyle = "#1e3a5f";
-  ctx.font = 'bold 24px system-ui, "Segoe UI", Roboto, sans-serif';
-  for (const line of titleLines) {
-    ctx.fillText(line, pad, y);
-    y += lhTitle;
-  }
+  y = drawTrainTitleCanvas(ctx, pad, maxW, y, trainNo, trainName);
   y += 8;
   ctx.fillStyle = "#4a5568";
   ctx.font = '15px system-ui, "Segoe UI", Roboto, sans-serif';
@@ -138,19 +424,25 @@ function drawBoardCardCanvas(row) {
     y += lhMeta;
   }
   y += 10;
-  ctx.fillStyle = "#111827";
-  ctx.font = 'bold 18px system-ui, "Segoe UI", Roboto, sans-serif';
-  for (const line of seqLines) {
-    ctx.fillText(line, pad, y);
-    y += lhSeq;
-  }
-  y += 6;
-  ctx.fillStyle = "#718096";
+  y = drawCoachStripCanvas(ctx, pad, maxW, y, row.selectedSequence || []);
+  y += 8;
   ctx.font = '14px system-ui, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(coachCount, pad, y);
+  if (trainNo) {
+    const prefix = `Train ${trainNo} · `;
+    const rest = `${(row.selectedSequence || []).length} positions`;
+    ctx.fillStyle = "#1d4ed8";
+    ctx.font = '600 14px system-ui, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(prefix, pad, y);
+    ctx.fillStyle = "#718096";
+    ctx.font = '14px system-ui, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(rest, pad + ctx.measureText(prefix).width, y);
+  } else {
+    ctx.fillStyle = "#718096";
+    ctx.fillText(coachCount, pad, y);
+  }
   y += lhSmall;
   ctx.fillText(confLine, pad, y);
-  y += lhSmall + 14;
+  y += lhSmall + 12;
   ctx.fillStyle = "#a0aec0";
   ctx.font = '12px system-ui, "Segoe UI", Roboto, sans-serif';
   ctx.fillText(footer, pad, y);
@@ -180,7 +472,13 @@ async function shareBoardCardAsImage(trainServiceId) {
   const rawName = `coach-board-${row.trainNo || "train"}-${row.journeyDate || "date"}.png`;
   const fileName = rawName.replace(/[^\w.-]+/g, "_");
   const file = new File([blob], fileName, { type: "image/png" });
-  const shareText = `${row.trainNo || ""} ${row.trainName || ""}\n${(row.selectedSequence || []).join(" ")}`.trim();
+  const tn = String(row.trainNo || "").trim();
+  const shareText = [
+    tn ? `Train ${tn}${row.trainName ? ` — ${row.trainName}` : ""}` : (row.trainName || "").trim(),
+    (row.selectedSequence || []).join(" "),
+  ]
+    .filter(Boolean)
+    .join("\n");
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: fileName, text: shareText });
@@ -233,7 +531,7 @@ function renderTrainSearchResults(rows, options) {
     heading +
     rows
       .map((row) => {
-        const seq = (row.selectedSequence || []).join(" ");
+        const seqHtml = buildBoardSequenceHtml(row.selectedSequence);
         const band = row.confidenceBand || "low";
         const low = band === "low";
         const warn = low
@@ -248,15 +546,15 @@ function renderTrainSearchResults(rows, options) {
             : "";
         return `
     <article class="card board-card" data-train-id="${row.id}">
-      <div class="board-card__head"><strong>${row.trainNo}</strong> <span class="meta">${row.trainName || ""}</span></div>
+      <div class="board-card__head"><span class="board-card__train-no">${escapeHtmlBoard(String(row.trainNo || ""))}</span> <span class="meta board-card__train-name">${escapeHtmlBoard(String(row.trainName || ""))}</span></div>
       <div class="board-meta-grid">
         <div class="meta"><strong>Updated</strong> ${formatDt(row.lastUpdatedAt)}</div>
         <div class="meta"><strong>Reporter phone</strong> ${row.updatedByPhone || "—"}</div>
         <div class="meta"><strong>Station</strong> ${row.stationCode || "—"}</div>
         <div class="meta"><strong>Journey date</strong> ${row.journeyDate || "—"}</div>
       </div>
-      <div class="seq">${seq || "—"}</div>
-      <div class="meta">Coaches: ${(row.selectedSequence || []).length} positions</div>
+      ${seqHtml}
+      <div class="meta board-coach-count">Train <span class="board-card__train-no board-card__train-no--compact">${escapeHtmlBoard(String(row.trainNo || "—"))}</span> · Coaches: ${(row.selectedSequence || []).length} positions</div>
       ${warn}
       <div class="board-card__row">
         <span class="badge ${confidenceClass(band)}">${String(band).toUpperCase()}</span>
