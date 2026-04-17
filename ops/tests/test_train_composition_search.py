@@ -46,8 +46,21 @@ def test_composition_search_no_query_lists_all(train_service_factory, user_facto
     client.force_authenticate(user=user_factory())
     res = client.get("/api/v1/trains/composition-search?limit=100")
     assert res.status_code == 200
+    assert res.headers.get("X-Total-Count") == "2"
     nos = {row["trainNo"] for row in res.json()}
     assert "12614" in nos and "22615" in nos
+
+
+@pytest.mark.django_db
+def test_composition_search_total_count_respects_filter(train_service_factory, user_factory):
+    train_service_factory(train_no="12614")
+    train_service_factory(train_no="22615")
+    client = APIClient()
+    client.force_authenticate(user=user_factory())
+    res = client.get("/api/v1/trains/composition-search?q=126&limit=50")
+    assert res.status_code == 200
+    assert res.headers.get("X-Total-Count") == "1"
+    assert len(res.json()) == 1
 
 
 @pytest.mark.django_db

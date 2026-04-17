@@ -159,6 +159,7 @@ function formatDt(iso) {
 
 function renderTrainSearchResults(rows, options) {
   const isFiltered = options && options.filtered;
+  const totalAll = options && typeof options.totalCount === "number" ? options.totalCount : null;
   if (!rows || rows.length === 0) {
     boardCards.innerHTML = `
       <article class="card">
@@ -172,9 +173,18 @@ function renderTrainSearchResults(rows, options) {
     `;
     return;
   }
-  const heading = isFiltered
-    ? `<p class="meta board-list-caption"><strong>${rows.length}</strong> matching train(s)</p>`
-    : `<p class="meta board-list-caption">Showing up to <strong>${rows.length}</strong> train(s), most recently updated first. Use the box to filter.</p>`;
+  let heading;
+  if (isFiltered) {
+    if (totalAll != null && totalAll > rows.length) {
+      heading = `<p class="meta board-list-caption"><strong>${rows.length}</strong> matching of <strong>${totalAll}</strong> train journey(s). Tap Load after clearing the box to see the full list.</p>`;
+    } else {
+      heading = `<p class="meta board-list-caption"><strong>${rows.length}</strong> matching train journey(s).</p>`;
+    }
+  } else if (totalAll != null && totalAll > rows.length) {
+    heading = `<p class="meta board-list-caption">Showing <strong>${rows.length}</strong> of <strong>${totalAll}</strong> train journey(s), most recently updated first. Each row is one train (same number + journey + station stays merged).</p>`;
+  } else {
+    heading = `<p class="meta board-list-caption">Showing <strong>${rows.length}</strong> train journey(s), most recently updated first. Each row is one train — multiple submits for the same journey update that row.</p>`;
+  }
   boardCards.innerHTML =
     heading +
     rows
@@ -212,14 +222,19 @@ function renderTrainSearchResults(rows, options) {
 }
 
 async function fetchTrainBoard() {
-  let url = "/api/v1/trains/composition-search?limit=100";
+  let url = "/api/v1/trains/composition-search?limit=500";
   if (currentTrainQuery.length > 0) {
     url += `&q=${encodeURIComponent(currentTrainQuery)}`;
   }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const rows = await res.json();
-  renderTrainSearchResults(rows, { filtered: currentTrainQuery.length > 0 });
+  const tcRaw = res.headers.get("X-Total-Count");
+  const totalCount = tcRaw != null && tcRaw !== "" ? Number(tcRaw) : NaN;
+  renderTrainSearchResults(rows, {
+    filtered: currentTrainQuery.length > 0,
+    totalCount: Number.isFinite(totalCount) ? totalCount : null,
+  });
 }
 
 async function fetchAlerts() {
@@ -354,6 +369,13 @@ loadBtn.addEventListener("click", async () => {
 });
 
 setInterval(fetchAlerts, 12000);
+
+/** Refresh the train list periodically so new journeys appear without tapping Load. */
+setInterval(() => {
+  fetchTrainBoard().catch(() => {
+    /* ignore */
+  });
+}, 75000);
 
 (async function initBoard() {
   const initial = loadTrainQueryPreference();

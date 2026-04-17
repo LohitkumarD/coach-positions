@@ -279,7 +279,8 @@ class TrainCompositionSearchView(APIView):
 
     def get(self, request: Request):
         q = (request.query_params.get("q") or "").strip()
-        limit = min(max(int(request.query_params.get("limit", 50)), 1), 100)
+        # Allow larger boards (ops-heavy sites); client may request up to 500.
+        limit = min(max(int(request.query_params.get("limit", 200)), 1), 500)
         # Sort by latest activity first so a just-submitted train is not buried behind 100 newer journey_dates.
         _epoch = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
         if len(q) >= 2:
@@ -288,6 +289,7 @@ class TrainCompositionSearchView(APIView):
             base = TrainService.objects.filter(train_no__startswith=q)
         else:
             base = TrainService.objects.all()
+        total_count = base.count()
         qs = (
             base.annotate(
                 _last_sub_at=models.Max("submissions__submitted_at"),
@@ -349,7 +351,7 @@ class TrainCompositionSearchView(APIView):
                     "confidenceBand": snap.confidence_band if snap else None,
                 }
             )
-        return Response(out)
+        return Response(out, headers={"X-Total-Count": str(total_count)})
 
 
 class BoardView(APIView):
