@@ -176,13 +176,13 @@ button:disabled {
 }
 
 @media (hover: hover) {
-  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):not(.board-share-btn):hover {
+  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):not(.board-share-btn):not(.board-retract-btn):hover {
     box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):not(.board-share-btn):active {
+  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):not(.board-share-btn):not(.board-retract-btn):active {
     transform: scale(0.97);
   }
 }
@@ -437,6 +437,41 @@ label {
 
 .board-share-btn:active {
   opacity: 0.88;
+}
+
+.board-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.board-card-action {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.board-card-action:hover {
+  text-decoration: underline;
+}
+
+.board-retract-btn {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  cursor: pointer;
+  box-shadow: none;
+  min-width: auto;
 }
 
 .confidence-banner {

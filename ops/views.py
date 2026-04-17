@@ -46,11 +46,8 @@ from ops.serializers import (
     TrainServiceCreateSerializer,
     TrainServiceBoardSerializer,
 )
-from ops.services.alerts import maybe_create_composition_change_alert
-from ops.services.notifier import PushNotifier
-from ops.services.reliability import apply_reliability_updates
+from ops.services.decision_publish import active_decision_snapshot, publish_decision_for_service
 from ops.services.gemini_scan import scan_image
-from ops.services.scoring import recalculate_candidates
 
 
 def _create_audit(actor, action, entity_type, entity_id, payload):
@@ -151,11 +148,16 @@ class SubmissionCreateView(APIView):
             )
         submission = serializer.save()
         service = submission.train_service
-        previous = service.decision_snapshots.order_by("-effective_at").first()
-        result = recalculate_candidates(service)
-        top = result["top_candidate"]
-        runner = result["runner_up"]
-        if not top:
+        out = publish_decision_for_service(
+            service,
+            request.user,
+            audit_fn=_create_audit,
+            audit_action="submission.create",
+            audit_entity_type="CoachSubmission",
+            audit_entity_id=submission.id,
+            audit_payload={"trainServiceId": service.id, "sequenceHash": submission.sequence_hash},
+        )
+        if out["no_snapshot"]:
             return Response(
                 {
                     "message": "No candidate yet — more reports improve confidence.",
@@ -165,46 +167,7 @@ class SubmissionCreateView(APIView):
                 },
                 status=status.HTTP_202_ACCEPTED,
             )
-
-        if previous:
-            previous.superseded_at = timezone.now()
-            previous.save(update_fields=["superseded_at"])
-        snapshot = DecisionSnapshot.objects.create(
-            train_service=service,
-            selected_candidate=top,
-            runner_up_candidate=runner,
-            confidence_band=result["confidence_band"],
-            confidence_score=result["confidence_score"],
-            score_delta=result["confidence_score"],
-            reason_codes=result["reason_codes"],
-            reason_details=result["reason_details"],
-        )
-        apply_reliability_updates(result["submissions"], final_sequence_hash=top.sequence_hash)
-
-        if result["confidence_band"] == ConfidenceBand.LOW:
-            ConflictCase.objects.get_or_create(
-                train_service=service,
-                status=ConflictStatus.OPEN,
-                defaults={
-                    "top_candidates": [
-                        {"hash": top.sequence_hash, "score": top.final_score, "sequence": top.normalized_sequence},
-                        {"hash": runner.sequence_hash if runner else "", "score": runner.final_score if runner else 0.0, "sequence": runner.normalized_sequence if runner else []},
-                    ]
-                },
-            )
-
-        alert = maybe_create_composition_change_alert(service, previous, snapshot)
-        if alert:
-            users = UserProfile.objects.filter(role__in=[UserRole.SUPERVISOR, UserRole.ADMIN], is_active=True)
-            PushNotifier().dispatch_alert(alert, users)
-
-        _create_audit(
-            request.user,
-            "submission.create",
-            "CoachSubmission",
-            submission.id,
-            {"trainServiceId": service.id, "sequenceHash": submission.sequence_hash},
-        )
+        snapshot = out["snapshot"]
         return Response(
             {
                 "submissionId": submission.id,
@@ -318,7 +281,7 @@ class TrainCompositionSearchView(APIView):
                 .first()
             )
             snap = (
-                DecisionSnapshot.objects.filter(train_service=ts)
+                DecisionSnapshot.objects.filter(train_service=ts, superseded_at__isnull=True)
                 .select_related("selected_candidate")
                 .order_by("-effective_at")
                 .first()
@@ -338,6 +301,10 @@ class TrainCompositionSearchView(APIView):
             seq = []
             if snap and snap.selected_candidate:
                 seq = snap.selected_candidate.normalized_sequence or []
+            can_retract = bool(
+                sub is not None
+                and sub.submitted_by_id == request.user.id
+            )
             out.append(
                 {
                     "id": ts.id,
@@ -349,9 +316,71 @@ class TrainCompositionSearchView(APIView):
                     "stationCode": station_code,
                     "selectedSequence": seq,
                     "confidenceBand": snap.confidence_band if snap else None,
+                    "canRetractLatest": can_retract,
                 }
             )
         return Response(out, headers={"X-Total-Count": str(total_count)})
+
+
+class TrainServiceRetractLatestSubmissionView(APIView):
+    """Remove the caller's most recent submission for a train journey and recompute the published composition."""
+
+    permission_classes = [IsContributorOrAbove]
+
+    @transaction.atomic
+    def delete(self, request: Request, pk: int):
+        service = get_object_or_404(TrainService, pk=pk)
+        sub = (
+            CoachSubmission.objects.filter(train_service=service)
+            .select_related("submitted_by")
+            .order_by("-submitted_at")
+            .first()
+        )
+        if not sub:
+            return Response({"detail": "No submission to retract"}, status=status.HTTP_404_NOT_FOUND)
+        if sub.submitted_by_id != request.user.id:
+            return Response(
+                {"detail": "Only the latest report can be removed, and only by the person who filed it."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        sid = sub.id
+        sub.delete()
+        out = publish_decision_for_service(
+            service,
+            request.user,
+            audit_fn=_create_audit,
+            audit_action="submission.retract",
+            audit_entity_type="CoachSubmission",
+            audit_entity_id=sid,
+            audit_payload={"trainServiceId": service.id, "submissionId": sid},
+        )
+        if out["no_snapshot"]:
+            _create_audit(
+                request.user,
+                "submission.retract",
+                "CoachSubmission",
+                sid,
+                {"trainServiceId": service.id, "submissionId": sid, "noPublishedComposition": True},
+            )
+            return Response(
+                {
+                    "trainServiceId": service.id,
+                    "retractedSubmissionId": sid,
+                    "noPublishedComposition": True,
+                },
+                status=status.HTTP_200_OK,
+            )
+        snapshot = out["snapshot"]
+        return Response(
+            {
+                "trainServiceId": service.id,
+                "retractedSubmissionId": sid,
+                "decisionId": snapshot.id,
+                "confidenceBand": snapshot.confidence_band,
+                "confidenceScore": snapshot.confidence_score,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class BoardView(APIView):
@@ -510,7 +539,7 @@ class ConflictOverrideView(APIView):
         candidate = conflict.train_service.candidates.filter(sequence_hash=candidate_hash).first()
         if not candidate:
             return Response({"detail": "candidate not found"}, status=status.HTTP_404_NOT_FOUND)
-        latest = conflict.train_service.decision_snapshots.order_by("-effective_at").first()
+        latest = active_decision_snapshot(conflict.train_service)
         if latest:
             latest.superseded_at = timezone.now()
             latest.save(update_fields=["superseded_at"])
@@ -578,7 +607,7 @@ class DecisionExplainView(APIView):
     def get(self, request: Request, train_service_id: int):
         latest = (
             DecisionSnapshot.objects.select_related("selected_candidate")
-            .filter(train_service_id=train_service_id)
+            .filter(train_service_id=train_service_id, superseded_at__isnull=True)
             .order_by("-effective_at")
             .first()
         )

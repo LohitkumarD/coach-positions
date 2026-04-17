@@ -17,6 +17,11 @@ urlpatterns = [
         views.TrainServiceRecentSequencesView.as_view(),
         name="train-service-recent-sequences",
     ),
+    path(
+        "api/v1/train-services/<int:pk>/retract-latest-submission",
+        views.TrainServiceRetractLatestSubmissionView.as_view(),
+        name="train-service-retract-latest",
+    ),
     path("api/v1/train-services", views.TrainServiceLookupView.as_view(), name="train-service-lookup"),
     path("api/v1/train-services/create", views.TrainServiceCreateView.as_view(), name="train-service-create"),
     path("api/v1/trains/composition-search", views.TrainCompositionSearchView.as_view(), name="train-composition-search"),

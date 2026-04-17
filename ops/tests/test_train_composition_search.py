@@ -36,6 +36,7 @@ def test_composition_search_returns_metadata(train_service_factory, station_fact
     assert hit["stationCode"] == "SBC"
     assert hit["updatedByPhone"] == "9876543210"
     assert hit["lastUpdatedAt"]
+    assert hit["canRetractLatest"] is False
 
 
 @pytest.mark.django_db
@@ -89,3 +90,28 @@ def test_composition_search_bubbles_up_recently_submitted_old_journey(train_serv
     assert res.status_code == 200
     rows = res.json()
     assert rows[0]["trainNo"] == "88888"
+    assert rows[0]["canRetractLatest"] is True
+
+
+@pytest.mark.django_db
+def test_composition_search_can_retract_when_latest_is_viewer(train_service_factory, station_factory, user_factory):
+    station = station_factory(code="RNR")
+    me = user_factory()
+    service = train_service_factory(train_no="17325")
+    CoachSubmission.objects.create(
+        train_service=service,
+        submitted_by=me,
+        source_type=SourceType.PHYSICAL_CHECK,
+        report_station=station,
+        raw_text="",
+        normalized_sequence=["ENG"],
+        sequence_signature="1:ENG",
+        sequence_hash="c" * 64,
+        idempotency_key="k-retract-meta",
+    )
+    client = APIClient()
+    client.force_authenticate(user=me)
+    res = client.get("/api/v1/trains/composition-search?q=17325")
+    assert res.status_code == 200
+    hit = next(x for x in res.json() if x["trainNo"] == "17325")
+    assert hit["canRetractLatest"] is True

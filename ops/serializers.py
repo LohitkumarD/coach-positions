@@ -14,6 +14,7 @@ from ops.models import (
     TrainService,
     RouteStopRank,
 )
+from ops.services.decision_publish import active_decision_snapshot
 from ops.services.normalization import normalize_sequence
 from ops.services.train_service_resolve import resolve_train_service_for_submission
 
@@ -107,7 +108,7 @@ class TrainServiceBoardSerializer(serializers.ModelSerializer):
         ]
 
     def _latest(self, obj: TrainService):
-        return obj.decision_snapshots.order_by("-effective_at").first()
+        return active_decision_snapshot(obj)
 
     def get_selected_sequence(self, obj):
         latest = self._latest(obj)

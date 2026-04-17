@@ -237,8 +237,15 @@ function renderTrainSearchResults(rows, options) {
         const band = row.confidenceBand || "low";
         const low = band === "low";
         const warn = low
-          ? `<p class="confidence-banner confidence-banner--low">Verify before announcing — confidence is low.</p>`
+          ? `<p class="confidence-banner confidence-banner--low">Verify before announcing — confidence is low. Use <strong>Update</strong> to resubmit coaches, or <strong>Remove my report</strong> if this row was your mistake.</p>`
           : "";
+        const journeyEnc = encodeURIComponent(row.journeyDate || "");
+        const trainEnc = encodeURIComponent(row.trainNo || "");
+        const updateHref = `/submit?train=${trainEnc}&journey=${journeyEnc}`;
+        const retractBtn =
+          row.canRetractLatest === true
+            ? `<button type="button" class="board-retract-btn" data-train-id="${row.id}">Remove my report</button>`
+            : "";
         return `
     <article class="card board-card" data-train-id="${row.id}">
       <div class="board-card__head"><strong>${row.trainNo}</strong> <span class="meta">${row.trainName || ""}</span></div>
@@ -254,6 +261,10 @@ function renderTrainSearchResults(rows, options) {
       <div class="board-card__row">
         <span class="badge ${confidenceClass(band)}">${String(band).toUpperCase()}</span>
         <button type="button" class="board-share-btn" data-train-id="${row.id}">Share as image</button>
+      </div>
+      <div class="board-card-actions">
+        <a class="board-card-action" href="${updateHref}">Update / fix</a>
+        ${retractBtn}
       </div>
     </article>
   `;
@@ -335,12 +346,49 @@ function loadTrainQueryPreference() {
   }
 }
 
+async function retractBoardLatestSubmission(trainServiceId) {
+  if (
+    !window.confirm(
+      "Remove your latest submission for this train? The board will recalculate from remaining reports."
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await fetch(`/api/v1/train-services/${trainServiceId}/retract-latest-submission`, {
+      method: "DELETE",
+      headers: { "X-CSRFToken": getCookie("csrftoken") },
+      credentials: "same-origin",
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 403) {
+      boardToast(body.detail || "You can only remove your own latest report.", "warning", 5000);
+      return;
+    }
+    if (!res.ok) {
+      boardToast(body.detail || `Could not remove (${res.status})`, "warning", 5000);
+      return;
+    }
+    boardToast("Your report was removed. Refreshing the board…", "success", 3500);
+    await fetchTrainBoard();
+  } catch (e) {
+    boardToast(e.message || "Network error.", "error");
+  }
+}
+
 if (boardCards) {
   boardCards.addEventListener("click", (ev) => {
-    const btn = ev.target.closest(".board-share-btn");
-    if (!btn) return;
-    const id = btn.getAttribute("data-train-id");
-    if (id) shareBoardCardAsImage(Number(id));
+    const share = ev.target.closest(".board-share-btn");
+    if (share) {
+      const id = share.getAttribute("data-train-id");
+      if (id) shareBoardCardAsImage(Number(id));
+      return;
+    }
+    const retract = ev.target.closest(".board-retract-btn");
+    if (retract) {
+      const id = retract.getAttribute("data-train-id");
+      if (id) retractBoardLatestSubmission(Number(id));
+    }
   });
 }
 

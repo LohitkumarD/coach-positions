@@ -1782,9 +1782,20 @@
   renderAiInfo();
   renderRecentList();
   loadDraft();
+  const params = new URLSearchParams(window.location.search);
+  const qsTrain = (params.get("train") || "").trim();
+  const qsJourney = (params.get("journey") || params.get("journeyDate") || "").trim();
+  if (qsTrain) {
+    trainNoHint.value = qsTrain;
+    trainSearchInput.value = qsTrain;
+    resetTrainServicePickUi();
+  }
+  if (qsJourney) {
+    const j = qsJourney.slice(0, 10).replace(/[^\d-]/g, "");
+    if (j) journeyHint.value = j;
+  }
   syncSequenceInput();
 
-  const params = new URLSearchParams(window.location.search);
   const qsStation = params.get("station");
   if (qsStation) reportStationInput.value = qsStation.toUpperCase();
   loadTrainServices().then(fetchLastKnown);

@@ -1,4 +1,5 @@
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from ops.models import CandidateComposition, ConfidenceBand, DecisionSnapshot
@@ -26,7 +27,7 @@ def test_explain_returns_latest_snapshot(user_factory, train_service_factory):
         score_breakup={"freqScore": 2},
         final_score=2.0,
     )
-    DecisionSnapshot.objects.create(
+    first = DecisionSnapshot.objects.create(
         train_service=service,
         selected_candidate=c1,
         confidence_band=ConfidenceBand.LOW,
@@ -42,6 +43,8 @@ def test_explain_returns_latest_snapshot(user_factory, train_service_factory):
         score_delta=1.2,
         reason_codes=["NEW"],
     )
+    first.superseded_at = timezone.now()
+    first.save(update_fields=["superseded_at"])
 
     client = APIClient()
     client.force_authenticate(user=user)
