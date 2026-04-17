@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -46,3 +48,31 @@ def test_composition_search_no_query_lists_all(train_service_factory, user_facto
     assert res.status_code == 200
     nos = {row["trainNo"] for row in res.json()}
     assert "12614" in nos and "22615" in nos
+
+
+@pytest.mark.django_db
+def test_composition_search_bubbles_up_recently_submitted_old_journey(train_service_factory, station_factory, user_factory):
+    """Trains with a fresh submission should not disappear behind many newer journey_date rows."""
+    station = station_factory(code="SBC")
+    user = user_factory()
+    # Many "newer" journey trains with no activity to fill the head of the old ordering.
+    for i in range(15):
+        train_service_factory(train_no=f"7{i:04d}", journey_date=date(2026, 6, 1))
+    old = train_service_factory(train_no="88888", journey_date=date(2019, 1, 1))
+    CoachSubmission.objects.create(
+        train_service=old,
+        submitted_by=user,
+        source_type=SourceType.PHYSICAL_CHECK,
+        report_station=station,
+        raw_text="",
+        normalized_sequence=["ENG"],
+        sequence_signature="1:ENG",
+        sequence_hash="b" * 64,
+        idempotency_key="bubble-1",
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+    res = client.get("/api/v1/trains/composition-search?limit=10")
+    assert res.status_code == 200
+    rows = res.json()
+    assert rows[0]["trainNo"] == "88888"

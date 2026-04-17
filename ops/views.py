@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+
 from django.db import models, transaction
+from django.db.models.functions import Greatest
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -278,12 +280,33 @@ class TrainCompositionSearchView(APIView):
     def get(self, request: Request):
         q = (request.query_params.get("q") or "").strip()
         limit = min(max(int(request.query_params.get("limit", 50)), 1), 100)
+        # Sort by latest activity first so a just-submitted train is not buried behind 100 newer journey_dates.
+        _epoch = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
         if len(q) >= 2:
-            qs = TrainService.objects.filter(train_no__icontains=q).order_by("-journey_date", "-id")[:limit]
+            base = TrainService.objects.filter(train_no__icontains=q)
         elif len(q) == 1:
-            qs = TrainService.objects.filter(train_no__startswith=q).order_by("-journey_date", "-id")[:limit]
+            base = TrainService.objects.filter(train_no__startswith=q)
         else:
-            qs = TrainService.objects.all().order_by("-journey_date", "-id")[:limit]
+            base = TrainService.objects.all()
+        qs = (
+            base.annotate(
+                _last_sub_at=models.Max("submissions__submitted_at"),
+                _last_snap_at=models.Max("decision_snapshots__effective_at"),
+            )
+            .annotate(
+                _activity=models.Case(
+                    models.When(
+                        models.Q(_last_sub_at__isnull=False) & models.Q(_last_snap_at__isnull=False),
+                        then=Greatest(models.F("_last_sub_at"), models.F("_last_snap_at")),
+                    ),
+                    models.When(_last_sub_at__isnull=False, then=models.F("_last_sub_at")),
+                    models.When(_last_snap_at__isnull=False, then=models.F("_last_snap_at")),
+                    default=models.Value(_epoch),
+                    output_field=models.DateTimeField(),
+                )
+            )
+            .order_by("-_activity", "-journey_date", "-id")[:limit]
+        )
         out = []
         for ts in qs:
             sub = (
