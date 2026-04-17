@@ -7,7 +7,11 @@
 
   const DRAFT_KEY = "coach_submit_draft_v2";
   const RECENT_KEY = "coach_submit_recent_v2";
-  const QUICK_TOKENS = ["GEN", "SLRD", "PC", "S1"];
+  const COMPACT_STORAGE_KEY = "coach_submit_compact_v1";
+  const QUICK_TOKENS = ["SLRD", "PC"];
+  const SPEED_PREFIXES = ["GEN", "S", "B", "A", "LPR"];
+  /** Show AI panel when scan confidence is below this (0–1 scale). */
+  const AI_CONFIDENCE_SHOW_THRESHOLD = 0.72;
 
   const screenHome = document.getElementById("screenHome");
   const screenScan = document.getElementById("screenScan");
@@ -49,7 +53,11 @@
   const issuesList = document.getElementById("issuesList");
   const issuesCard = document.getElementById("issuesCard");
   const aiInfoBlock = document.getElementById("aiInfoBlock");
-  const reviewSummary = document.getElementById("reviewSummary");
+  const aiSection = document.getElementById("aiSection");
+  const stickyPreview = document.getElementById("stickyPreview");
+  const compactToggle = document.getElementById("compactToggle");
+  const speedPrefixBar = document.getElementById("speedPrefixBar");
+  const submitAppRoot = document.getElementById("submitAppRoot");
   const btnSaveDraft = document.getElementById("btnSaveDraft");
   const btnSubmit = document.getElementById("btnSubmit");
   const btnEditBack = document.getElementById("btnEditBack");
@@ -59,6 +67,9 @@
   const lastKnownText = document.getElementById("lastKnownText");
   const lastKnownEmpty = document.getElementById("lastKnownEmpty");
   const btnApplyLastKnown = document.getElementById("btnApplyLastKnown");
+  const patternSuggest = document.getElementById("patternSuggest");
+  const coachHints = document.getElementById("coachHints");
+  const defaultsStatus = document.getElementById("defaultsStatus");
 
   const state = {
     screen: "home",
@@ -77,6 +88,7 @@
     lastKnownSequences: [],
     /** Snapshot after scan apply; used for AI vs user diff. */
     aiBaselineTokens: null,
+    compactView: false,
   };
 
   const DEFAULT_SCAN_BTN_LABEL = btnScanImage ? btnScanImage.textContent : "Scan image";
@@ -88,6 +100,299 @@
     if (n >= 0 && n <= 1) return `${Math.round(n * 100)}%`;
     if (n > 1 && n <= 100) return `${Math.round(n)}%`;
     return String(c);
+  }
+
+  /** @returns {number | null} 0–1 or null */
+  function confidenceToUnit(c) {
+    if (c == null || c === "") return null;
+    const n = Number(c);
+    if (!Number.isFinite(n)) return null;
+    if (n >= 0 && n <= 1) return n;
+    if (n > 1 && n <= 100) return n / 100;
+    return null;
+  }
+
+  function tokenSeriesKey(tok) {
+    const u = String(tok).trim().toUpperCase();
+    if (!u) return "";
+    if (/^GEN\d*$/i.test(u)) return "GEN";
+    if (/^S\d+$/i.test(u)) return "S";
+    if (/^B\d+$/i.test(u)) return "B";
+    if (/^A\d+$/i.test(u)) return "A";
+    if (/^ENG$/i.test(u)) return "ENG";
+    if (/^SLRD\d*$/i.test(u)) return "SLRD";
+    if (/^PC\d*$/i.test(u)) return "PC";
+    if (/^LPR\d*$/i.test(u)) return "LPR";
+    return "OTHER";
+  }
+
+  /**
+   * @param {string} key
+   * @param {string[]} slice
+   * @returns {{ main: string, sub: string }}
+   */
+  function formatGroupLabel(key, slice) {
+    const n = slice.length;
+    const u = slice.map((t) => String(t).trim().toUpperCase()).filter(Boolean);
+    if (!key || key === "EMPTY") {
+      return { main: `Empty rows ×${n}`, sub: n ? "Fill or remove" : "" };
+    }
+    if (key === "GEN") {
+      return { main: `GEN ×${n}`, sub: "General (unreserved / second sitting)" };
+    }
+    if (key === "S") {
+      const nums = u
+        .map((t) => {
+          const m = t.match(/^S(\d+)$/i);
+          return m ? parseInt(m[1], 10) : NaN;
+        })
+        .filter((x) => Number.isFinite(x))
+        .sort((a, b) => a - b);
+      const range =
+        nums.length >= 2 ? `S${nums[0]}–S${nums[nums.length - 1]}` : u.join(" · ");
+      return { main: `Sleeper · ${range}`, sub: `${n} coach${n > 1 ? "es" : ""}` };
+    }
+    if (key === "B") {
+      const nums = u
+        .map((t) => {
+          const m = t.match(/^B(\d+)$/i);
+          return m ? parseInt(m[1], 10) : NaN;
+        })
+        .filter((x) => Number.isFinite(x))
+        .sort((a, b) => a - b);
+      const range =
+        nums.length >= 2 ? `B${nums[0]}–B${nums[nums.length - 1]}` : u.join(" · ");
+      return { main: `3AC · ${range}`, sub: `${n} coach${n > 1 ? "es" : ""}` };
+    }
+    if (key === "A") {
+      const nums = u
+        .map((t) => {
+          const m = t.match(/^A(\d+)$/i);
+          return m ? parseInt(m[1], 10) : NaN;
+        })
+        .filter((x) => Number.isFinite(x))
+        .sort((a, b) => a - b);
+      const range =
+        nums.length >= 2 ? `A${nums[0]}–A${nums[nums.length - 1]}` : u.join(" · ");
+      return { main: `2AC · ${range}`, sub: `${n} coach${n > 1 ? "es" : ""}` };
+    }
+    if (key === "ENG") return { main: "Power car · ENG", sub: "Loco end" };
+    if (key === "SLRD") return { main: `SLRD ×${n}`, sub: "Second sitting with pantry" };
+    if (key === "PC") return { main: `Pantry · PC ×${n}`, sub: "" };
+    if (key === "LPR") {
+      const nums = u
+        .map((t) => {
+          const m = t.match(/^LPR(\d+)$/i);
+          return m ? parseInt(m[1], 10) : NaN;
+        })
+        .filter((x) => Number.isFinite(x))
+        .sort((a, b) => a - b);
+      const bare = u.some((t) => /^LPR$/i.test(t));
+      const range =
+        nums.length >= 2
+          ? `LPR${nums[0]}–LPR${nums[nums.length - 1]}`
+          : bare && nums.length
+            ? `LPR · LPR${nums[0]}`
+            : u.join(" · ");
+      return { main: `LPR · ${range}`, sub: `${n} coach${n > 1 ? "es" : ""}` };
+    }
+    return { main: `Other · ${u.slice(0, 3).join(", ")}${u.length > 3 ? "…" : ""}`, sub: `${n} item${n > 1 ? "s" : ""}` };
+  }
+
+  function buildGroupLabelEl(key, slice) {
+    const li = document.createElement("li");
+    li.className = "chip-group-label";
+    li.setAttribute("role", "presentation");
+    const meta = formatGroupLabel(key, slice);
+    const main = document.createElement("div");
+    main.className = "chip-group-label__main";
+    main.textContent = meta.main;
+    li.appendChild(main);
+    if (meta.sub) {
+      const sub = document.createElement("div");
+      sub.className = "chip-group-label__sub";
+      sub.textContent = meta.sub;
+      li.appendChild(sub);
+    }
+    return li;
+  }
+
+  function renderPatternSuggest() {
+    if (!patternSuggest) return;
+    patternSuggest.textContent = "";
+    patternSuggest.hidden = true;
+    if (state.editingChipIndex !== null) return;
+    const toks = state.tokens.map((t) => String(t).trim());
+    if (!toks.length) return;
+    const last = toks[toks.length - 1];
+    if (!last) return;
+    const lu = last.toUpperCase();
+    let suggestLabel = "";
+    let suggestToken = "";
+
+    if (/^GEN\d*$/i.test(lu)) {
+      const nextG = nextTokenForPrefix("GEN");
+      if (nextG === "GEN") {
+        suggestLabel = "Continue with GEN?";
+        suggestToken = "GEN";
+      }
+    } else {
+      const mm = lu.match(/^(S|B|A|LPR)(\d+)$/i);
+      if (mm) {
+        const pref = mm[1].toUpperCase();
+        const next = nextTokenForPrefix(pref);
+        if (next && next !== last) {
+          suggestLabel = `Add ${next}?`;
+          suggestToken = next;
+        }
+      }
+    }
+
+    if (!suggestLabel || !suggestToken) return;
+
+    patternSuggest.hidden = false;
+    const wrap = document.createElement("div");
+    wrap.className = "pattern-suggest__inner";
+    const txt = document.createElement("span");
+    txt.className = "pattern-suggest__text";
+    txt.textContent = suggestLabel;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-inline pattern-suggest__btn";
+    btn.textContent = `+ ${suggestToken}`;
+    btn.addEventListener("click", () => {
+      state.tokens.push(suggestToken);
+      const idx = state.tokens.length - 1;
+      renderChips();
+      syncSequenceInput();
+      renderIssues();
+      saveDraft();
+      flashChipRow(idx);
+    });
+    wrap.appendChild(txt);
+    wrap.appendChild(btn);
+    patternSuggest.appendChild(wrap);
+  }
+
+  function renderCoachHints() {
+    if (!coachHints) return;
+    coachHints.textContent = "";
+    coachHints.hidden = true;
+    const cleaned = state.tokens.map((t) => String(t).trim()).filter(Boolean);
+    if (!cleaned.length) return;
+
+    const hasS = cleaned.some((t) => /^S\d+$/i.test(t));
+    const hasB = cleaned.some((t) => /^B\d+$/i.test(t));
+    const hasA = cleaned.some((t) => /^A\d+$/i.test(t));
+    const hasGen = cleaned.some((t) => /^GEN\d*$/i.test(t));
+    const hasEng = cleaned.some((t) => /^ENG$/i.test(t));
+    const lines = [];
+
+    if (hasGen && (hasB || hasA) && !hasS) {
+      lines.push({ kind: "warn", text: "AC coaches present but no S — confirm sleeper order if required." });
+    }
+    if (cleaned.length <= 2) {
+      lines.push({ kind: "warn", text: "Short rake — confirm this is the full consist." });
+    }
+    const uniq = new Set(cleaned.map((t) => t.toUpperCase()));
+    if (uniq.size < cleaned.length) {
+      lines.push({ kind: "warn", text: "Duplicate coach codes — unusual unless intentional." });
+    }
+    if (hasEng && hasGen && cleaned.length >= 4 && (hasS || hasB)) {
+      lines.push({ kind: "ok", text: "Looks like a typical coach mix." });
+    }
+
+    if (!lines.length) return;
+    coachHints.hidden = false;
+    for (const line of lines.slice(0, 3)) {
+      const row = document.createElement("div");
+      row.className = `coach-hints__row coach-hints__row--${line.kind}`;
+      row.textContent = line.kind === "ok" ? `✔ ${line.text}` : `⚠ ${line.text}`;
+      coachHints.appendChild(row);
+    }
+  }
+
+  function updateDefaultsStatus() {
+    if (!defaultsStatus) return;
+    const phys = sourceType && sourceType.value === "physical_check";
+    const eng = directionEngine && directionEngine.checked;
+    if (phys && eng) {
+      defaultsStatus.textContent = "Defaults: Physical check · Engine → tail";
+      defaultsStatus.className = "defaults-status defaults-status--ok";
+    } else {
+      defaultsStatus.textContent = "Source or direction changed — see More options if needed.";
+      defaultsStatus.className = "defaults-status defaults-status--muted";
+    }
+  }
+
+  function bandToLevel(band) {
+    const s = String(band == null ? "" : band).toLowerCase();
+    if (s.includes("high")) return "HIGH";
+    if (s.includes("low")) return "LOW";
+    if (s.includes("medium") || s.includes("mid")) return "MEDIUM";
+    const t = String(band || "—").trim();
+    return t.length > 12 ? `${t.slice(0, 11)}…` : t.toUpperCase();
+  }
+
+  /**
+   * Next token for speed keys: S→S1,S2… GEN→GEN (repeat), LPR→LPR1…
+   * @param {string} prefix
+   */
+  function nextTokenForPrefix(prefix) {
+    const p = String(prefix).trim().toUpperCase();
+    if (p === "GEN") return "GEN";
+    const re = new RegExp(`^${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)$`, "i");
+    let max = 0;
+    let hasBare = false;
+    for (const t of state.tokens) {
+      const u = String(t).trim().toUpperCase();
+      if (u === p) hasBare = true;
+      const m = u.match(re);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (Number.isFinite(n) && n > max) max = n;
+      }
+    }
+    if (p === "LPR" || p === "S" || p === "B" || p === "A") {
+      if (max === 0 && !hasBare) return `${p}1`;
+      return `${p}${max + 1}`;
+    }
+    return p;
+  }
+
+  function applyCompactUi() {
+    const on = Boolean(state.compactView);
+    if (submitAppRoot) submitAppRoot.classList.toggle("submit-app--compact", on);
+    if (compactToggle) compactToggle.checked = on;
+    try {
+      localStorage.setItem(COMPACT_STORAGE_KEY, on ? "1" : "0");
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function flashChipRow(index) {
+    requestAnimationFrame(() => {
+      const row = chipList && chipList.querySelector(`.chip-row[data-index="${index}"]`);
+      if (!row) return;
+      row.classList.add("chip-row--pop");
+      row.addEventListener(
+        "animationend",
+        () => {
+          row.classList.remove("chip-row--pop");
+        },
+        { once: true }
+      );
+    });
+  }
+
+  function syncAiSectionVisibility() {
+    if (!aiSection) return;
+    const hasDiff = aiChangeBlock && !aiChangeBlock.hidden;
+    const unit = confidenceToUnit(state.aiConfidence);
+    const confLow = unit != null && unit < AI_CONFIDENCE_SHOW_THRESHOLD;
+    const show = Boolean(hasDiff || confLow);
+    aiSection.hidden = !show;
   }
 
   function flashSubmitResult() {
@@ -156,7 +461,10 @@
 
   function syncSequenceInput() {
     sequenceInput.value = state.tokens.map((t) => String(t).trim()).filter(Boolean).join(" ");
-    updateReviewSummary();
+    updateStickyPreview();
+    renderPatternSuggest();
+    renderCoachHints();
+    updateDefaultsStatus();
   }
 
   function updateReverseButtonState() {
@@ -174,12 +482,14 @@
     const base = state.aiBaselineTokens;
     if (!base || !base.length) {
       aiChangeBlock.hidden = true;
+      syncAiSectionVisibility();
       return;
     }
     const normBase = base.map((t) => String(t).trim()).filter(Boolean).join(" ");
     const normCur = state.tokens.map((t) => String(t).trim()).filter(Boolean).join(" ");
     if (normBase === normCur) {
       aiChangeBlock.hidden = true;
+      syncAiSectionVisibility();
       return;
     }
     aiChangeBlock.hidden = false;
@@ -203,9 +513,11 @@
     det.appendChild(body);
     aiChangeBlock.appendChild(one);
     aiChangeBlock.appendChild(det);
+    syncAiSectionVisibility();
   }
 
-  function updateReviewSummary() {
+  function updateStickyPreview() {
+    if (!stickyPreview) return;
     let trainPart =
       trainOptions.options[trainOptions.selectedIndex]?.textContent ||
       selectedTrainMeta.textContent ||
@@ -216,15 +528,15 @@
       trainPart = hint || "—";
     }
     const seq = sequenceInput.value.trim() || "—";
-    reviewSummary.textContent = "";
+    stickyPreview.textContent = "";
     const lineTrain = document.createElement("div");
-    lineTrain.className = "review-compact__train";
-    lineTrain.textContent = `Train ${trainPart}`;
+    lineTrain.className = "sticky-preview__train";
+    lineTrain.textContent = trainPart;
     const lineSeq = document.createElement("div");
-    lineSeq.className = "review-compact__seq";
+    lineSeq.className = "sticky-preview__seq";
     lineSeq.textContent = seq;
-    reviewSummary.appendChild(lineTrain);
-    reviewSummary.appendChild(lineSeq);
+    stickyPreview.appendChild(lineTrain);
+    stickyPreview.appendChild(lineSeq);
   }
 
   function setTrainSelection(id, label) {
@@ -237,7 +549,36 @@
     selectedTrainMeta.textContent = t.length > 64 ? `${t.slice(0, 61)}…` : t;
   }
 
-  function renderTrainOptions(items) {
+  /** Digits-only train number for comparing typed number vs dropdown label. */
+  function digitsOnlyTrainNo(s) {
+    return String(s || "").replace(/[^\d]/g, "");
+  }
+
+  /** Train number from the current dropdown label (before "—"). */
+  function listSelectionTrainNo() {
+    const opt = trainOptions.options[trainOptions.selectedIndex];
+    if (!opt || !opt.value) return "";
+    const head = (opt.textContent || "").split("—")[0].trim();
+    return digitsOnlyTrainNo(head);
+  }
+
+  /** Clear linked TrainService so submit uses the number field, not a stale hidden id. */
+  function resetTrainServicePickUi() {
+    trainOptions.textContent = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Not linked — uses train number above";
+    trainOptions.appendChild(opt);
+    setTrainSelection("", "");
+    if (emptyTrainHint) emptyTrainHint.hidden = true;
+  }
+
+  /**
+   * @param {object[]} items
+   * @param {string} [searchQuery] trimmed search box value — when empty, do not auto-pick first train (avoids wrong hidden id).
+   */
+  function renderTrainOptions(items, searchQuery) {
+    const q = (searchQuery || "").trim();
     trainOptions.textContent = "";
     if (!items.length) {
       const opt = document.createElement("option");
@@ -249,14 +590,32 @@
       return;
     }
     if (emptyTrainHint) emptyTrainHint.hidden = true;
+    if (!q) {
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = "Optional — pick a saved service…";
+      trainOptions.appendChild(ph);
+    }
     for (const t of items) {
       const opt = document.createElement("option");
       opt.value = String(t.id);
       opt.textContent = `${t.trainNo} — ${t.trainName || "Unnamed"} (${t.targetStation || "—"})`;
       trainOptions.appendChild(opt);
     }
-    const first = trainOptions.options[0];
-    setTrainSelection(first.value, first.textContent);
+    const keepId = trainServiceIdInput.value.trim();
+    const hasKeep = keepId && items.some((x) => String(x.id) === keepId);
+    if (hasKeep) {
+      trainOptions.value = keepId;
+      const sel = trainOptions.options[trainOptions.selectedIndex];
+      setTrainSelection(keepId, sel ? sel.textContent : "");
+    } else if (q) {
+      const first = items[0];
+      trainOptions.value = String(first.id);
+      setTrainSelection(String(first.id), `${first.trainNo} — ${first.trainName || "Unnamed"} (${first.targetStation || "—"})`);
+    } else {
+      trainOptions.value = "";
+      setTrainSelection("", "");
+    }
   }
 
   async function loadTrainServices() {
@@ -268,14 +627,14 @@
     try {
       const res = await fetch(url, { signal: trainSearchAbort.signal });
       if (!res.ok) {
-        renderTrainOptions([]);
+        renderTrainOptions([], q);
         return;
       }
       const rows = await res.json();
-      renderTrainOptions(rows);
+      renderTrainOptions(rows, q);
     } catch (e) {
       if (e.name === "AbortError") return;
-      renderTrainOptions([]);
+      renderTrainOptions([], q);
     }
   }
 
@@ -310,6 +669,7 @@
   }
 
   function renderIssues() {
+    if (!issuesCard || !issuesList) return;
     issuesList.textContent = "";
     const local = [];
     state.tokens.forEach((tok, i) => {
@@ -318,6 +678,7 @@
     const merged = [...state.lastValidationErrors, ...local];
     if (!merged.length) {
       issuesCard.hidden = true;
+      syncAiSectionVisibility();
       return;
     }
     issuesCard.hidden = false;
@@ -327,12 +688,15 @@
       li.textContent = String(msg);
       issuesList.appendChild(li);
     });
+    syncAiSectionVisibility();
   }
 
   function renderAiInfo() {
+    if (!aiInfoBlock) return;
     aiInfoBlock.textContent = "";
     if (state.aiConfidence == null && !state.aiNotes) {
-      aiInfoBlock.textContent = "—";
+      aiInfoBlock.textContent = "";
+      syncAiSectionVisibility();
       return;
     }
     const row = document.createElement("div");
@@ -357,6 +721,7 @@
       det.appendChild(body);
       aiInfoBlock.appendChild(det);
     }
+    syncAiSectionVisibility();
   }
 
   function destroySortable() {
@@ -378,15 +743,20 @@
     destroySortable();
     if (typeof Sortable === "undefined") return;
     sortableInstance = Sortable.create(chipList, {
+      draggable: ".chip-row",
       handle: ".chip-drag",
       delay: 120,
       delayOnTouchOnly: true,
       filter: ".chip-token, .chip-remove, .chip-token-input",
       preventOnFilter: false,
-      animation: 180,
+      animation: 200,
       easing: "cubic-bezier(0.22, 1, 0.36, 1)",
       forceFallback: true,
       fallbackTolerance: 8,
+      scroll: true,
+      scrollSensitivity: 100,
+      scrollSpeed: 15,
+      bubbleScroll: true,
       ghostClass: "sortable-ghost",
       chosenClass: "sortable-chosen",
       dragClass: "sortable-drag",
@@ -398,6 +768,7 @@
         evt.item.removeAttribute("aria-grabbed");
         evt.item.classList.remove("chip-row--dragging");
         readTokensFromDom();
+        renderChips();
         syncSequenceInput();
         renderIssues();
         renderAiChangeBlock();
@@ -425,6 +796,7 @@
     state.editingChipIndex = null;
     renderChips();
     syncSequenceInput();
+    renderIssues();
   }
 
   function startChipEdit(index) {
@@ -443,6 +815,7 @@
     tokenBtn.replaceWith(input);
     input.focus();
     input.select();
+    renderPatternSuggest();
 
     let blurCancelTimer = null;
     input.addEventListener("keydown", (ev) => {
@@ -492,16 +865,31 @@
     li.dataset.token = String(token);
     li.setAttribute("role", "listitem");
 
+    const pos = index + 1;
+    const idxEl = document.createElement("span");
+    idxEl.className = "chip-index";
+    idxEl.textContent = String(pos);
+    idxEl.setAttribute("aria-hidden", "true");
+
     const dragBtn = document.createElement("button");
     dragBtn.type = "button";
     dragBtn.className = "chip-drag";
-    dragBtn.setAttribute("aria-label", "Drag row to reorder coaches");
+    dragBtn.setAttribute("aria-label", `Drag coach row ${pos} to reorder`);
     dragBtn.textContent = "⠿";
 
     const tokenBtn = document.createElement("button");
     tokenBtn.type = "button";
     tokenBtn.className = "chip-token";
-    tokenBtn.textContent = token || " ";
+    tokenBtn.setAttribute("aria-label", `Coach ${pos}: ${String(token).trim() || "empty"}`);
+    const posBadge = document.createElement("span");
+    posBadge.className = "chip-token__pos";
+    posBadge.textContent = String(pos);
+    posBadge.setAttribute("aria-hidden", "true");
+    const codeSpan = document.createElement("span");
+    codeSpan.className = "chip-token__code";
+    codeSpan.textContent = String(token).trim() || " ";
+    tokenBtn.appendChild(posBadge);
+    tokenBtn.appendChild(codeSpan);
     const err = chipHasError(token, index) || !String(token).trim();
     if (err) {
       tokenBtn.classList.add("chip-token--error");
@@ -524,6 +912,7 @@
       saveDraft();
     });
 
+    li.appendChild(idxEl);
     li.appendChild(dragBtn);
     li.appendChild(tokenBtn);
     li.appendChild(removeBtn);
@@ -534,9 +923,18 @@
   function renderChips() {
     destroySortable();
     chipList.textContent = "";
-    state.tokens.forEach((tok, i) => {
-      chipList.appendChild(buildChipRow(tok, i));
-    });
+    let i = 0;
+    while (i < state.tokens.length) {
+      const key = tokenSeriesKey(state.tokens[i]);
+      let j = i + 1;
+      while (j < state.tokens.length && tokenSeriesKey(state.tokens[j]) === key) j += 1;
+      const slice = state.tokens.slice(i, j);
+      chipList.appendChild(buildGroupLabelEl(key, slice));
+      for (let k = i; k < j; k += 1) {
+        chipList.appendChild(buildChipRow(state.tokens[k], k));
+      }
+      i = j;
+    }
     if (chipEmptyState) chipEmptyState.hidden = state.tokens.length > 0;
     initSortable();
     updateReverseButtonState();
@@ -561,6 +959,7 @@
     renderChips();
     syncSequenceInput();
     renderIssues();
+    updateDefaultsStatus();
     saveDraft();
   }
 
@@ -663,6 +1062,7 @@
         stalePreviousScan: state.stalePreviousScan,
         lastScanError: state.lastScanError,
         aiBaselineTokens: state.aiBaselineTokens,
+        compactView: state.compactView,
       };
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
     } catch (_) {
@@ -698,10 +1098,12 @@
       if (typeof d.lastScanError === "string") state.lastScanError = d.lastScanError;
       if (Array.isArray(d.aiBaselineTokens)) state.aiBaselineTokens = d.aiBaselineTokens.map((x) => String(x));
       else if (d.aiBaselineTokens === null) state.aiBaselineTokens = null;
+      if (typeof d.compactView === "boolean") state.compactView = d.compactView;
+      applyCompactUi();
       if (d.trainServiceId) trainServiceIdInput.value = d.trainServiceId;
       if (typeof d.enteredFromScan === "boolean") state.enteredFromScan = d.enteredFromScan;
-      syncSequenceInput();
       renderChips();
+      syncSequenceInput();
       renderIssues();
       renderAiInfo();
       if (d.screen === "edit" || d.screen === "scan" || d.screen === "home") {
@@ -723,6 +1125,7 @@
           }
           const sel = trainOptions.options[trainOptions.selectedIndex];
           setTrainSelection(String(tid), sel ? sel.textContent : "");
+          syncSequenceInput();
           fetchLastKnown();
           saveDraft();
         });
@@ -788,6 +1191,7 @@
     if (ext.train_number != null) trainNoHint.value = String(ext.train_number);
     if (ext.train_name != null) trainNameHint.value = String(ext.train_name);
     if (ext.journey_date) journeyHint.value = String(ext.journey_date).slice(0, 10);
+    resetTrainServicePickUi();
     directionEngine.checked = true;
     directionTail.checked = false;
     state.directionRadio = "engine";
@@ -857,6 +1261,10 @@
           }
           return;
         }
+        if (res.status === 503 && data.code === "missing_api_key") {
+          showToast("Photo scan needs GEMINI_API_KEY on the server. Use Manual to enter coaches.", "error", 6500);
+          return;
+        }
         let shortDetail = detail;
         if (shortDetail.length > 320) {
           shortDetail = `${shortDetail.slice(0, 300)}…`;
@@ -899,7 +1307,31 @@
     }
   }
 
+  function initSpeedPrefixBar() {
+    if (!speedPrefixBar) return;
+    speedPrefixBar.textContent = "";
+    for (const prefix of SPEED_PREFIXES) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn-inline btn-inline--speed";
+      b.textContent = `+ ${prefix}`;
+      b.setAttribute("aria-label", `Add next ${prefix} coach`);
+      b.addEventListener("click", () => {
+        const next = nextTokenForPrefix(prefix);
+        state.tokens.push(next);
+        const idx = state.tokens.length - 1;
+        renderChips();
+        syncSequenceInput();
+        renderIssues();
+        saveDraft();
+        flashChipRow(idx);
+      });
+      speedPrefixBar.appendChild(b);
+    }
+  }
+
   function initQuickAdd() {
+    if (!quickAddButtons) return;
     quickAddButtons.textContent = "";
     for (const tok of QUICK_TOKENS) {
       const b = document.createElement("button");
@@ -908,16 +1340,19 @@
       b.textContent = `+ ${tok}`;
       b.addEventListener("click", () => {
         state.tokens.push(tok);
+        const idx = state.tokens.length - 1;
         renderChips();
         syncSequenceInput();
         renderIssues();
         saveDraft();
+        flashChipRow(idx);
       });
       quickAddButtons.appendChild(b);
     }
   }
 
   async function fetchLastKnown() {
+    if (!lastKnownBlock || !lastKnownEmpty || !lastKnownText) return;
     const tid = Number(trainServiceIdInput.value);
     if (!tid || Number.isNaN(tid)) {
       lastKnownBlock.hidden = true;
@@ -967,6 +1402,7 @@
     renderChips();
     syncSequenceInput();
     renderIssues();
+    renderAiInfo();
     saveDraft();
     showToast("Applied.", "success");
   }
@@ -984,6 +1420,7 @@
     state.stalePreviousScan = false;
     state.lastScanError = "";
     syncStaleBanners();
+    resetTrainServicePickUi();
     state.aiBaselineTokens = null;
     state.aiConfidence = null;
     state.aiNotes = "";
@@ -1015,9 +1452,10 @@
 
   btnAddCoach.addEventListener("click", () => {
     state.tokens.push("");
+    const lastIndex = state.tokens.length - 1;
     renderChips();
     syncSequenceInput();
-    const lastIndex = state.tokens.length - 1;
+    flashChipRow(lastIndex);
     startChipEdit(lastIndex);
     saveDraft();
   });
@@ -1047,9 +1485,16 @@
 
   btnSubmit.addEventListener("click", async () => {
     submitResult.textContent = "";
-    const tid = Number(trainServiceIdInput.value);
+    let tid = Number(trainServiceIdInput.value);
     const trainNoRaw = (trainNoHint.value || "").trim() || (trainSearchInput.value || "").trim();
-    const useList = tid && !Number.isNaN(tid);
+    let useList = tid && !Number.isNaN(tid);
+    const hintDigits = digitsOnlyTrainNo(trainNoRaw);
+    const listDigits = listSelectionTrainNo();
+    if (useList && hintDigits && listDigits && hintDigits !== listDigits) {
+      useList = false;
+      tid = NaN;
+      resetTrainServicePickUi();
+    }
     if (!useList && !trainNoRaw) {
       showToast("Enter train number and coaches.", "error", 5000);
       return;
@@ -1063,6 +1508,7 @@
       showToast("Remove empty coach rows.", "error");
       return;
     }
+    const submitStarted = performance.now();
     btnSubmit.disabled = true;
     try {
       const rs = reportStationInput.value.trim().toUpperCase();
@@ -1103,26 +1549,29 @@
       }
       const sig = body.sequenceSignature || "—";
       const band = body.confidenceBand != null ? body.confidenceBand : "—";
+      const level = bandToLevel(band);
+      const elapsedSec = Math.max(0, (performance.now() - submitStarted) / 1000).toFixed(1);
       if (res.status === 202) {
-        submitResult.textContent = `Saved (building confidence). Order: ${sig}`;
+        submitResult.textContent = `Submitted ✓ (confidence building). Order: ${sig} · ${elapsedSec}s`;
         flashSubmitResult();
-        showToast("Submitted (confidence building).", "success", 4800);
+        const extra = band && String(band) !== "—" ? ` · ${level}` : "";
+        showToast(`Submitted ✓ · building confidence${extra} · ${elapsedSec}s`, "success", 5200);
       } else if (body.status === "deduplicated") {
-        submitResult.textContent = "Already saved (duplicate request).";
+        submitResult.textContent = `Already saved · ${elapsedSec}s`;
         flashSubmitResult();
-        showToast("Already recorded.", "success", 3200);
+        showToast(`Already recorded · ${elapsedSec}s`, "success", 3400);
       } else {
-        submitResult.textContent = `Saved. Confidence: ${band}. Order: ${sig}`;
+        submitResult.textContent = `Submitted ✓ · confidence ${level} · order ${sig} · ${elapsedSec}s`;
         flashSubmitResult();
-        showToast("Submitted.", "success", 4000);
+        showToast(`Submitted ✓ · confidence ${level} · ${elapsedSec}s`, "success", 5200);
       }
       state.tokens = [];
       state.lastValidationErrors = [];
       state.aiBaselineTokens = null;
       state.aiConfidence = null;
       state.aiNotes = "";
-      syncSequenceInput();
       renderChips();
+      syncSequenceInput();
       renderIssues();
       renderAiInfo();
       sessionStorage.removeItem(DRAFT_KEY);
@@ -1215,16 +1664,24 @@
   trainSearchInput.addEventListener("input", () => {
     scheduleLoadTrainServices();
     saveDraft();
+    syncSequenceInput();
   });
   trainOptions.addEventListener("change", () => {
     const selected = trainOptions.options[trainOptions.selectedIndex];
     setTrainSelection(selected?.value || "", selected?.textContent || "");
     saveDraft();
+    syncSequenceInput();
     fetchLastKnown();
   });
 
-  sourceType.addEventListener("change", saveDraft);
-  trainNoHint.addEventListener("input", saveDraft);
+  sourceType.addEventListener("change", () => {
+    saveDraft();
+    updateDefaultsStatus();
+  });
+  trainNoHint.addEventListener("input", () => {
+    saveDraft();
+    syncSequenceInput();
+  });
   trainNameHint.addEventListener("input", saveDraft);
   journeyHint.addEventListener("change", saveDraft);
 
@@ -1256,13 +1713,32 @@
     }
   });
 
+  try {
+    const storedCompact = localStorage.getItem(COMPACT_STORAGE_KEY);
+    if (storedCompact === "1" || storedCompact === "0") {
+      state.compactView = storedCompact === "1";
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  applyCompactUi();
+  if (compactToggle) {
+    compactToggle.addEventListener("change", () => {
+      state.compactView = Boolean(compactToggle.checked);
+      applyCompactUi();
+      saveDraft();
+    });
+  }
+
+  initSpeedPrefixBar();
   initQuickAdd();
   renderChips();
+  syncSequenceInput();
   renderIssues();
   renderAiInfo();
   renderRecentList();
   loadDraft();
-  updateReviewSummary();
+  syncSequenceInput();
 
   const params = new URLSearchParams(window.location.search);
   const qsStation = params.get("station");

@@ -14,7 +14,7 @@
 
 {% block content %}
 <div class="submit-app submit-app--pro" id="submitAppRoot">
-  <h2 class="submit-app__title">Submit</h2>
+  <p class="submit-app__lead">Photo scan or manual coach entry.</p>
 
   <section id="screenHome" class="submit-screen" aria-label="Home">
     <div class="card">
@@ -123,58 +123,44 @@
       <p id="createTrainResult" class="submit-result" aria-live="polite"></p>
     </div>
 
-    <div class="card card--coaches">
-      <h3 class="card__title">Coaches</h3>
+    <div class="card card--coaches card--coaches-focus">
+      <div class="coaches-head">
+        <h3 class="card__title">Coaches</h3>
+        <label class="compact-toggle">
+          <input type="checkbox" id="compactToggle" name="compactToggle" />
+          <span class="compact-toggle__text">Compact</span>
+        </label>
+      </div>
+      <p id="defaultsStatus" class="defaults-status" aria-live="polite"></p>
       <input type="hidden" id="sequenceInput" autocomplete="off" />
+
+      <div id="lastKnownBlock" class="last-known-inline" hidden>
+        <span class="last-known-inline__label">Last</span>
+        <span id="lastKnownText" class="last-known-inline__seq" aria-live="polite"></span>
+        <button type="button" class="btn-inline btn-inline--apply" id="btnApplyLastKnown">Apply</button>
+      </div>
+      <p id="lastKnownEmpty" class="last-known-inline last-known-inline--empty hint-panel hint-panel--minimal">—</p>
+
       <div id="chipEmptyState" class="chip-empty chip-empty--minimal">No coaches yet.</div>
       <ul id="chipList" class="chip-list" aria-label="Coach sequence"></ul>
-      <button type="button" class="btn-secondary" id="btnAddCoach">+</button>
-      <div id="quickAddRow" class="quick-add-bar">
-        <div id="quickAddButtons" role="group" aria-label="Quick add"></div>
-      </div>
-    </div>
 
-    <div class="section-compact">
-      <h3 class="card__title">Source</h3>
-      <label class="visually-hidden" for="sourceType">Source</label>
-      <select id="sourceType" class="form-select">
-        <option value="physical_check">Physical check</option>
-        <option value="tte_onboard">TTE onboard</option>
-        <option value="enroute_station">Enroute station</option>
-        <option value="origin_station">Origin station</option>
-        <option value="forwarded_message">Forwarded message</option>
-      </select>
-    </div>
+      <div id="patternSuggest" class="pattern-suggest" hidden></div>
+      <div id="coachHints" class="coach-hints" hidden></div>
 
-    <div class="card card--last-known">
-      <h3 class="card__title">Last known</h3>
-      <div id="lastKnownBlock" class="last-known-banner" hidden>
-        <p id="lastKnownText" class="last-known-banner__text"></p>
-        <button type="button" class="btn-primary" id="btnApplyLastKnown">Apply</button>
+      <div class="coaches-toolbar">
+        <button type="button" class="btn-secondary btn-secondary--tight" id="btnReverseOrder">Reverse</button>
       </div>
-      <p id="lastKnownEmpty" class="hint-panel hint-panel--minimal">—</p>
-    </div>
 
-    <div class="card direction-card">
-      <div class="card__title-row">
-        <h3 class="card__title">Direction</h3>
-        <details class="pro-details">
-          <summary class="pro-details__summary" aria-label="About direction">ℹ️</summary>
-          <div id="directionHelpDynamic" class="pro-details__body"></div>
-        </details>
+      <div id="quickAddRow" class="quick-add-bar quick-add-bar--footer">
+        <span class="quick-add-bar__label" id="quickAddBarLabel">Quick add</span>
+        <div id="quickAddButtons" role="group" aria-label="Preset coaches"></div>
       </div>
-      <fieldset class="direction-fieldset">
-        <legend class="visually-hidden">Direction</legend>
-        <label class="direction-option">
-          <input type="radio" name="directionMode" id="directionEngine" value="engine" checked />
-          <span>Engine → tail</span>
-        </label>
-        <label class="direction-option">
-          <input type="radio" name="directionMode" id="directionTail" value="tail" />
-          <span>Tail → engine</span>
-        </label>
-      </fieldset>
-      <button type="button" class="btn-secondary" id="btnReverseOrder">Reverse</button>
+
+      <div class="coaches-thumb-zone" aria-label="Quick coach types">
+        <span class="coaches-thumb-zone__label">Speed add</span>
+        <div id="speedPrefixBar" class="speed-prefix-bar" role="group" aria-label="Quick add by coach type"></div>
+      </div>
+      <button type="button" class="btn-secondary" id="btnAddCoach">+ Coach</button>
     </div>
 
     <div id="issuesCard" class="card card--risk" role="region" aria-labelledby="issuesHeading">
@@ -184,23 +170,57 @@
       </div>
     </div>
 
-    <div class="section-compact section-compact--ai">
-      <h3 class="card__title">AI</h3>
+    <div id="aiSection" class="card card--ai-wc" role="region" aria-labelledby="aiHeading" hidden>
+      <h3 class="card__title" id="aiHeading">AI</h3>
       <div id="aiInfoBlock" class="ai-info ai-info--compact" aria-live="polite"></div>
       <div id="aiChangeBlock" class="ai-change-block ai-change-block--compact" hidden aria-live="polite"></div>
     </div>
 
-    <div class="card card--review">
-      <h3 class="card__title">Review</h3>
-      <div id="reviewSummary" class="review-compact" aria-live="polite"></div>
-    </div>
-
     <div class="submit-sticky">
+      <div id="stickyPreview" class="sticky-preview" aria-live="polite"></div>
       <div class="actions-row">
         <button type="button" class="btn-secondary" id="btnSaveDraft">Save</button>
         <button type="button" class="btn-primary" id="btnSubmit">Submit</button>
       </div>
     </div>
+
+    <details class="submit-more" id="submitMorePanel">
+      <summary class="submit-more__summary">More options<span class="submit-more__hint"> — source, direction</span></summary>
+      <div class="submit-more__inner">
+        <div class="submit-more__block">
+          <h4 class="wc-subhead">Source</h4>
+          <label class="visually-hidden" for="sourceType">Source</label>
+          <select id="sourceType" class="form-select">
+            <option value="physical_check">Physical check</option>
+            <option value="tte_onboard">TTE onboard</option>
+            <option value="enroute_station">Enroute station</option>
+            <option value="origin_station">Origin station</option>
+            <option value="forwarded_message">Forwarded message</option>
+          </select>
+        </div>
+        <div class="submit-more__block direction-card direction-card--nested">
+          <div class="card__title-row">
+            <h4 class="wc-subhead">Direction</h4>
+            <details class="pro-details">
+              <summary class="pro-details__summary" aria-label="About direction">ℹ️</summary>
+              <div id="directionHelpDynamic" class="pro-details__body"></div>
+            </details>
+          </div>
+          <fieldset class="direction-fieldset">
+            <legend class="visually-hidden">Direction</legend>
+            <label class="direction-option">
+              <input type="radio" name="directionMode" id="directionEngine" value="engine" checked />
+              <span>Engine → tail</span>
+            </label>
+            <label class="direction-option">
+              <input type="radio" name="directionMode" id="directionTail" value="tail" />
+              <span>Tail → engine</span>
+            </label>
+          </fieldset>
+        </div>
+      </div>
+    </details>
+
     <button type="button" class="btn-secondary" id="btnEditBack">Back</button>
     <p id="submitResult" class="submit-result submit-result--animate" aria-live="assertive"></p>
   </section>

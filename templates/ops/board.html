@@ -13,23 +13,6 @@
 <p class="hint-panel board-search-hint">Lists train journeys (up to 500 per load; the list also auto-refreshes about every 75s). One row per train number + journey + station — extra submits update that row. Filter by typing digits and tapping Load.</p>
 <section id="alertsPanel" class="alerts-wrap"></section>
 <main id="boardCards" class="board-main"></main>
-
-<div id="explainSheet" class="sheet" hidden>
-  <div class="sheet__backdrop" id="explainBackdrop" aria-hidden="true"></div>
-  <div class="sheet__panel" role="dialog" aria-labelledby="explainTitle">
-    <div class="sheet__head">
-      <h2 id="explainTitle" class="sheet__title">Why this composition?</h2>
-      <button type="button" class="sheet__close" id="explainClose" aria-label="Close">×</button>
-    </div>
-    <div id="explainBody" class="sheet__body"></div>
-    <div id="explainFooter" class="sheet__footer" hidden>
-      <button type="button" class="btn-primary sheet__primary-action" id="explainConfirm">
-        I've reviewed this
-      </button>
-      <p class="sheet__footer-hint meta">Confirms you have read this summary for your own workflow. It does not change the published composition.</p>
-    </div>
-  </div>
-</div>
 {% endblock %}
 
 {% block scripts %}

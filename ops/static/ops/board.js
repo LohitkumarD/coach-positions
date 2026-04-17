@@ -6,16 +6,10 @@ const loadBtn = document.getElementById("loadBtn");
 const alertsPanel = document.getElementById("alertsPanel");
 const networkState = document.getElementById("networkState");
 
-const explainSheet = document.getElementById("explainSheet");
-const explainBackdrop = document.getElementById("explainBackdrop");
-const explainClose = document.getElementById("explainClose");
-const explainBody = document.getElementById("explainBody");
-const explainFooter = document.getElementById("explainFooter");
-const explainConfirm = document.getElementById("explainConfirm");
-
 let currentTrainQuery = "";
 let lastAlertId = 0;
-let explainTrainServiceId = null;
+/** Latest rows from composition-search (for share lookup by train id). */
+let lastBoardRows = [];
 
 function boardToast(message, variant, durationMs) {
   const root = document.getElementById("toastRoot");
@@ -30,116 +24,6 @@ function boardToast(message, variant, durationMs) {
     el.classList.remove("toast--show");
     setTimeout(() => el.remove(), 300);
   }, ms);
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-const REASON_LABELS = {
-  MAJORITY_MATCH: "Several independent reports pointed at this same coach order.",
-  NEAR_STATION_SUPPORT: "Reports came from stations that are close on this train's route.",
-  HIGH_RELIABILITY_SUPPORT: "People who usually report reliably supported this reading.",
-  RUNNER_UP_GAP: "This order scored clearly ahead of the next-best alternative.",
-};
-
-const METRIC_LABELS = {
-  freqScore: "Different reporters",
-  sourceScore: "How trustworthy the report types are (field check, TTE, etc.)",
-  freshnessScore: "How recent the sightings are",
-  proximityScore: "How close the reporting station is on the route",
-  contributorScore: "Reporter track record",
-  penaltyScore: "Penalty if any line was marked invalid",
-};
-
-function explainBandCopy(band, score) {
-  const b = String(band || "low").toLowerCase();
-  const s = score != null && score !== "" ? Number(score) : NaN;
-  const gap = Number.isFinite(s) ? `The gap between the top choice and the runner-up is ${s}.` : "";
-  let title = "Confidence";
-  let text = "";
-  if (b === "high") {
-    title = "High confidence";
-    text =
-      "Enough agreement and separation from other readings that you can normally rely on this list for operations. " +
-      gap;
-  } else if (b === "medium") {
-    title = "Medium confidence";
-    text =
-      "Usually fine to use, but glance at the coach list once more before you announce it, especially if the train is about to arrive. " +
-      gap;
-  } else {
-    title = "Low confidence";
-    text =
-      "There are not many matching reports, or another coach order is almost as likely. Treat this as a draft — verify with a second source or a fresh walk-through before you announce. " +
-      gap;
-  }
-  return { title, text, bandClass: b === "high" ? "high" : b === "medium" ? "medium" : "low" };
-}
-
-function renderScoreTable(breakup) {
-  if (!breakup || typeof breakup !== "object") return "";
-  const rows = [];
-  for (const [k, v] of Object.entries(breakup)) {
-    const label = METRIC_LABELS[k] || k;
-    const num = typeof v === "number" ? (Math.abs(v) < 30 && String(v).includes(".") ? v.toFixed(2) : String(v)) : escapeHtml(String(v));
-    rows.push(`<tr><th scope="row">${escapeHtml(label)}</th><td>${num}</td></tr>`);
-  }
-  if (!rows.length) return "";
-  return `<table class="explain-metrics"><tbody>${rows.join("")}</tbody></table>`;
-}
-
-function buildExplainHtml(d) {
-  const seq = Array.isArray(d.selected_sequence) ? d.selected_sequence.join(" ") : "";
-  const band = explainBandCopy(d.confidence_band, d.confidence_score);
-  const codes = Array.isArray(d.reason_codes) ? d.reason_codes : [];
-  const bullets = codes
-    .map((c) => {
-      const label = REASON_LABELS[c];
-      return label ? `<li>${escapeHtml(label)}</li>` : `<li><code>${escapeHtml(c)}</code></li>`;
-    })
-    .join("");
-  const top = d.reason_details && d.reason_details.topScoreBreakup;
-  const runner = d.reason_details && d.reason_details.runnerUpScoreBreakup;
-  const support = typeof d.support_count === "number" ? d.support_count : null;
-  const supportLine =
-    support != null
-      ? `<p class="meta" style="margin:0 0 10px"><strong>Matching reports</strong> ${support}</p>`
-      : "";
-  const technicalJson =
-    d.reason_details && typeof d.reason_details === "object"
-      ? JSON.stringify(d.reason_details, null, 2)
-      : String(d.reason_details || "—");
-  const runnerBlock =
-    runner && typeof runner === "object" && Object.keys(runner).length
-      ? `<h3 class="explain-band__title" style="margin:14px 0 6px;font-size:15px">Runner-up (for supervisors)</h3>${renderScoreTable(runner)}`
-      : "";
-  return `
-    <div class="explain-band explain-band--${band.bandClass}">
-      <h3 class="explain-band__title">${escapeHtml(band.title)}</h3>
-      <p class="explain-band__text">${escapeHtml(band.text)}</p>
-    </div>
-    ${supportLine}
-    <p class="meta" style="margin:0 0 6px"><strong>Coach order shown on the board</strong></p>
-    <p class="explain-seq">${escapeHtml(seq || "—")}</p>
-    ${
-      bullets
-        ? `<p class="meta" style="margin:0 0 6px"><strong>Why the system leaned this way</strong></p><ul class="explain-bullets">${bullets}</ul>`
-        : `<p class="meta">No extra reason flags beyond the scores below.</p>`
-    }
-    <h3 class="explain-band__title" style="margin:14px 0 6px;font-size:15px">How the score was built</h3>
-    ${renderScoreTable(top)}
-    ${runnerBlock}
-    <details class="explain-technical">
-      <summary>Technical details (JSON)</summary>
-      <pre class="explain-pre">${escapeHtml(technicalJson)}</pre>
-    </details>
-    <p class="meta" style="margin:12px 0 0">Effective: ${d.effective_at ? escapeHtml(new Date(d.effective_at).toLocaleString()) : "—"}</p>
-  `;
 }
 
 function confidenceClass(conf) {
@@ -157,10 +41,169 @@ function formatDt(iso) {
   }
 }
 
+/** Split text into lines that fit `maxWidth` using the current `ctx.font`. */
+function wrapIntoLines(ctx, text, maxWidth) {
+  const t = String(text || "").trim();
+  if (!t) return ["—"];
+  const words = t.split(/\s+/);
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(next).width <= maxWidth) {
+      cur = next;
+    } else {
+      if (cur) lines.push(cur);
+      cur = w;
+      if (ctx.measureText(cur).width > maxWidth) {
+        let chunk = "";
+        for (const ch of w) {
+          const t2 = chunk + ch;
+          if (ctx.measureText(t2).width > maxWidth && chunk) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk = t2;
+          }
+        }
+        cur = chunk;
+      }
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : ["—"];
+}
+
+function drawBoardCardCanvas(row) {
+  const W = 920;
+  const pad = 28;
+  const maxW = W - pad * 2;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+
+  const title = `${row.trainNo || ""} ${row.trainName || ""}`.trim() || "Train";
+  ctx.font = 'bold 24px system-ui, "Segoe UI", Roboto, sans-serif';
+  const titleLines = wrapIntoLines(ctx, title, maxW);
+
+  const metaLines = [
+    `Updated: ${formatDt(row.lastUpdatedAt)}`,
+    `Reporter phone: ${row.updatedByPhone || "—"}`,
+    `Station: ${row.stationCode || "—"}`,
+    `Journey date: ${row.journeyDate || "—"}`,
+  ];
+
+  const seq = (row.selectedSequence || []).join(" ");
+  ctx.font = 'bold 18px system-ui, "Segoe UI", Roboto, sans-serif';
+  const seqLines = wrapIntoLines(ctx, seq || "—", maxW);
+
+  const coachCount = `Coaches: ${(row.selectedSequence || []).length} positions`;
+  const confLine = `Confidence: ${String(row.confidenceBand || "low").toUpperCase()}`;
+  const footer = "Shared from the board — verify before announcing.";
+
+  const lhTitle = 32;
+  const lhMeta = 22;
+  const lhSeq = 24;
+  const lhSmall = 20;
+
+  const H =
+    pad +
+    titleLines.length * lhTitle +
+    12 +
+    metaLines.length * lhMeta +
+    16 +
+    seqLines.length * lhSeq +
+    lhSmall * 2 +
+    36 +
+    pad;
+
+  canvas.width = W;
+  canvas.height = H;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "top";
+
+  let y = pad;
+  ctx.fillStyle = "#1e3a5f";
+  ctx.font = 'bold 24px system-ui, "Segoe UI", Roboto, sans-serif';
+  for (const line of titleLines) {
+    ctx.fillText(line, pad, y);
+    y += lhTitle;
+  }
+  y += 8;
+  ctx.fillStyle = "#4a5568";
+  ctx.font = '15px system-ui, "Segoe UI", Roboto, sans-serif';
+  for (const line of metaLines) {
+    ctx.fillText(line, pad, y);
+    y += lhMeta;
+  }
+  y += 10;
+  ctx.fillStyle = "#111827";
+  ctx.font = 'bold 18px system-ui, "Segoe UI", Roboto, sans-serif';
+  for (const line of seqLines) {
+    ctx.fillText(line, pad, y);
+    y += lhSeq;
+  }
+  y += 6;
+  ctx.fillStyle = "#718096";
+  ctx.font = '14px system-ui, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(coachCount, pad, y);
+  y += lhSmall;
+  ctx.fillText(confLine, pad, y);
+  y += lhSmall + 14;
+  ctx.fillStyle = "#a0aec0";
+  ctx.font = '12px system-ui, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(footer, pad, y);
+
+  return canvas;
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not create image"))), "image/png");
+  });
+}
+
+async function shareBoardCardAsImage(trainServiceId) {
+  const row = lastBoardRows.find((r) => Number(r.id) === Number(trainServiceId));
+  if (!row) {
+    boardToast("Could not find this train. Tap Load and try again.", "warning");
+    return;
+  }
+  let blob;
+  try {
+    blob = await canvasToBlob(drawBoardCardCanvas(row));
+  } catch (e) {
+    boardToast(e.message || "Could not build image.", "warning");
+    return;
+  }
+  const rawName = `coach-board-${row.trainNo || "train"}-${row.journeyDate || "date"}.png`;
+  const fileName = rawName.replace(/[^\w.-]+/g, "_");
+  const file = new File([blob], fileName, { type: "image/png" });
+  const shareText = `${row.trainNo || ""} ${row.trainName || ""}\n${(row.selectedSequence || []).join(" ")}`.trim();
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: fileName, text: shareText });
+      boardToast("Share sheet opened.", "success", 2800);
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+  boardToast("Image downloaded — attach it from your gallery or files app.", "info", 4500);
+}
+
 function renderTrainSearchResults(rows, options) {
   const isFiltered = options && options.filtered;
   const totalAll = options && typeof options.totalCount === "number" ? options.totalCount : null;
   if (!rows || rows.length === 0) {
+    lastBoardRows = [];
     boardCards.innerHTML = `
       <article class="card">
         <div><strong>No trains found</strong></div>
@@ -173,6 +216,7 @@ function renderTrainSearchResults(rows, options) {
     `;
     return;
   }
+  lastBoardRows = rows;
   let heading;
   if (isFiltered) {
     if (totalAll != null && totalAll > rows.length) {
@@ -209,16 +253,12 @@ function renderTrainSearchResults(rows, options) {
       ${warn}
       <div class="board-card__row">
         <span class="badge ${confidenceClass(band)}">${String(band).toUpperCase()}</span>
-        <button type="button" class="btn-link why-btn" data-train-id="${row.id}">Why?</button>
+        <button type="button" class="board-share-btn" data-train-id="${row.id}">Share as image</button>
       </div>
     </article>
   `;
       })
       .join("");
-
-  boardCards.querySelectorAll(".why-btn").forEach((btn) => {
-    btn.addEventListener("click", () => openExplain(Number(btn.getAttribute("data-train-id"))));
-  });
 }
 
 async function fetchTrainBoard() {
@@ -295,51 +335,12 @@ function loadTrainQueryPreference() {
   }
 }
 
-async function openExplain(trainServiceId) {
-  if (!explainSheet || !explainBody) return;
-  explainTrainServiceId = trainServiceId;
-  if (explainFooter) explainFooter.hidden = true;
-  explainBody.textContent = "Loading…";
-  explainSheet.hidden = false;
-  try {
-    const res = await fetch(`/api/v1/decisions/${trainServiceId}/explain`);
-    if (!res.ok) {
-      explainBody.textContent = res.status === 404 ? "No decision data yet for this train." : `Error ${res.status}`;
-      return;
-    }
-    const d = await res.json();
-    explainBody.innerHTML = buildExplainHtml(d);
-    if (explainFooter) {
-      explainFooter.hidden = false;
-      explainFooter.dataset.trainServiceId = String(trainServiceId);
-      explainFooter.dataset.snapshotId = String(d.id != null ? d.id : "");
-    }
-  } catch (e) {
-    explainBody.textContent = e.message || "Could not load explanation.";
-  }
-}
-
-function closeExplain() {
-  if (explainSheet) explainSheet.hidden = true;
-  if (explainFooter) explainFooter.hidden = true;
-}
-
-if (explainBackdrop) explainBackdrop.addEventListener("click", closeExplain);
-if (explainClose) explainClose.addEventListener("click", closeExplain);
-
-if (explainConfirm && explainFooter) {
-  explainConfirm.addEventListener("click", () => {
-    const tid = explainFooter.dataset.trainServiceId;
-    const sid = explainFooter.dataset.snapshotId;
-    if (tid && sid) {
-      try {
-        sessionStorage.setItem(`coach_board_explain_ack_${tid}_${sid}`, new Date().toISOString());
-      } catch (_) {
-        /* ignore */
-      }
-    }
-    closeExplain();
-    boardToast("Recorded — you confirmed you read this summary. It does not change the published composition.", "success", 4500);
+if (boardCards) {
+  boardCards.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".board-share-btn");
+    if (!btn) return;
+    const id = btn.getAttribute("data-train-id");
+    if (id) shareBoardCardAsImage(Number(id));
   });
 }
 

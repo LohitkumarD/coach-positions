@@ -176,13 +176,13 @@ button:disabled {
 }
 
 @media (hover: hover) {
-  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):hover {
+  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):not(.board-share-btn):hover {
     box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):active {
+  button:not(:disabled):not(.btn-secondary):not(.btn-link):not(.sheet__close):not(.chip-remove):not(.chip-drag):not(.chip-token):not(.btn-inline):not(.board-share-btn):active {
     transform: scale(0.97);
   }
 }
@@ -419,6 +419,24 @@ label {
   gap: 10px;
   margin-top: 10px;
   flex-wrap: wrap;
+}
+
+.board-share-btn {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #90cdf4;
+  background: #ebf8ff;
+  color: #2b6cb0;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: none;
+  min-width: auto;
+}
+
+.board-share-btn:active {
+  opacity: 0.88;
 }
 
 .confidence-banner {
