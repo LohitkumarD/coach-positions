@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
@@ -268,6 +270,19 @@ class DeviceToken(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["user", "is_active"])]
+
+
+class IncomingShareImage(models.Model):
+    """Temporary image from Android Web Share Target (multi-dyno safe via Postgres)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    image_data = models.BinaryField()
+    content_type = models.CharField(max_length=128)
+    created_at = models.DateTimeField(default=timezone.now)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["created_at"])]
 
 
 class AuditEvent(models.Model):

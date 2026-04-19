@@ -1342,6 +1342,96 @@
     }
   }
 
+  async function consumeShareFromToken(token) {
+    if (imageTypeSelect) imageTypeSelect.value = "unknown";
+    const hadPrior = state.extractions.length > 0;
+    async function postShare() {
+      return fetch("/api/v1/submissions/scan-shared", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken") || "",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ token }),
+      });
+    }
+    try {
+      let res = await postShare();
+      let data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status === 429) {
+        showToast("Waiting a moment and retrying once…", "info", 2600);
+        await new Promise((r) => setTimeout(r, 2800));
+        res = await postShare();
+        data = await res.json().catch(() => ({}));
+      }
+      if (res.status === 403) {
+        showToast("Your account cannot use photo scan (contributor access required).", "error");
+        return;
+      }
+      if (!res.ok) {
+        const msg429 =
+          data.code === "quota_exceeded"
+            ? "Latest scan hit Google AI quota or model limits."
+            : "Latest scan was rate-limited.";
+        const detail = data.detail ? String(data.detail) : "";
+        if (res.status === 429) {
+          const head =
+            data.code === "quota_exceeded"
+              ? "Google AI quota or model limit (try another GEMINI_MODEL or wait a few minutes)."
+              : "Too many requests — try again shortly.";
+          const body =
+            detail.length > 260 ? `${detail.slice(0, 240).trim()}…` : detail;
+          showToast(body ? `${head} ${body}` : head, "error");
+          if (hadPrior) {
+            state.stalePreviousScan = true;
+            state.lastScanError = `${msg429} The cards below are from an earlier successful scan, not this photo.`;
+            syncStaleBanners();
+            if (state.screen === "scan") renderScanResults();
+          }
+          return;
+        }
+        if (res.status === 503 && data.code === "missing_api_key") {
+          showToast("Photo scan needs GEMINI_API_KEY on the server. Use Manual to enter coaches.", "error", 6500);
+          return;
+        }
+        let shortDetail = detail;
+        if (shortDetail.length > 320) {
+          shortDetail = `${shortDetail.slice(0, 300)}…`;
+        }
+        const parts = [data.error, shortDetail].filter(Boolean);
+        showToast(parts.length ? parts.join(" — ") : `Scan failed (${res.status})`, "error");
+        if (hadPrior) {
+          state.stalePreviousScan = true;
+          state.lastScanError = `Latest scan failed. The cards below are from an earlier successful scan, not this photo.`;
+          syncStaleBanners();
+          if (state.screen === "scan") renderScanResults();
+        }
+        return;
+      }
+      if (!data.extractions || !data.extractions.length) {
+        showToast("No extractions returned.", "error");
+        return;
+      }
+      state.stalePreviousScan = false;
+      state.lastScanError = "";
+      syncStaleBanners();
+      state.extractions = data.extractions;
+      renderScanResults();
+      showScreen("scan");
+      saveDraft();
+    } catch (e) {
+      showToast("Network error during scan.", "error");
+      if (hadPrior) {
+        state.stalePreviousScan = true;
+        state.lastScanError =
+          "Latest scan had a network error. The cards below are from an earlier successful scan.";
+        syncStaleBanners();
+        if (state.screen === "scan") renderScanResults();
+      }
+    }
+  }
+
   function initSpeedPrefixBar() {
     if (!speedPrefixBar) return;
     speedPrefixBar.textContent = "";
@@ -1798,5 +1888,19 @@
 
   const qsStation = params.get("station");
   if (qsStation) reportStationInput.value = qsStation.toUpperCase();
-  loadTrainServices().then(fetchLastKnown);
+  const shareTokenBoot = (params.get("share_token") || "").trim();
+  const bootChain = loadTrainServices().then(fetchLastKnown);
+  if (shareTokenBoot) {
+    bootChain
+      .then(() => consumeShareFromToken(shareTokenBoot))
+      .finally(() => {
+        try {
+          const u = new URL(window.location.href);
+          u.searchParams.delete("share_token");
+          history.replaceState({}, "", u.pathname + u.search + u.hash);
+        } catch (_) {
+          /* ignore */
+        }
+      });
+  }
 })();

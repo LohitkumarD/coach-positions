@@ -3,10 +3,12 @@ from django.http import HttpResponse, HttpResponseForbidden
 from django.urls import include, path
 from django_ratelimit.exceptions import Ratelimited
 
-from ops.views import register
+from ops.views import pwa_incoming_share, pwa_service_worker, register
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("pwa/incoming-share", pwa_incoming_share, name="pwa-incoming-share"),
+    path("sw.js", pwa_service_worker, name="pwa-service-worker"),
     path("accounts/register/", register, name="register"),
     path("accounts/", include("django.contrib.auth.urls")),
     path("", include("ops.urls")),

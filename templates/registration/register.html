@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#0f172a" />
   <title>Create account — Coach Position</title>
   <link rel="manifest" href="{% static 'ops/manifest.json' %}" />
+  {% include "ops/includes/pwa_head.html" %}
   <link rel="stylesheet" href="{% static 'ops/mobile.css' %}" />
 </head>
 <body class="auth-page">
@@ -56,5 +57,6 @@
     </section>
     <p class="auth-footnote meta">Session-based login. Not an official railway system.</p>
   </main>
+  {% include "ops/includes/pwa_scripts.html" %}
 </body>
 </html>

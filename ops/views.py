@@ -1,21 +1,32 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
+import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
+from urllib.parse import quote, urlencode
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-
+from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 from django.db import models, transaction
 from django.db.models.functions import Greatest
-from django.http import Http404, HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseNotFound,
+    JsonResponse,
+    StreamingHttpResponse,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
 from rest_framework import generics, permissions, status
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from django_ratelimit.decorators import ratelimit
@@ -30,6 +41,7 @@ from ops.models import (
     ConflictStatus,
     DecisionSnapshot,
     DeviceToken,
+    IncomingShareImage,
     NotificationDelivery,
     TrainService,
     CoachSubmission,
@@ -48,6 +60,35 @@ from ops.serializers import (
 )
 from ops.services.decision_publish import active_decision_snapshot, publish_decision_for_service
 from ops.services.gemini_scan import scan_image
+
+logger = logging.getLogger(__name__)
+
+SHARE_TARGET_SALT = "coach_positions.share_image.v1"
+SHARE_TOKEN_MAX_AGE = 60 * 15
+MAX_SCAN_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def _share_token_signer() -> TimestampSigner:
+    return TimestampSigner(salt=SHARE_TARGET_SALT)
+
+
+def _response_from_gemini_scan_result(result: dict) -> Response:
+    """Map Gemini scan dict to DRF Response (shared by file upload and share-token scan)."""
+    if "error" not in result:
+        return Response(result)
+    err = result.get("error", "")
+    code = result.get("code", "")
+    if code == "missing_api_key":
+        return Response(result, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if code == "quota_exceeded":
+        return Response(result, status=status.HTTP_429_TOO_MANY_REQUESTS)
+    if code == "auth_error":
+        return Response(result, status=status.HTTP_401_UNAUTHORIZED)
+    if code == "model_not_found":
+        return Response(result, status=status.HTTP_400_BAD_REQUEST)
+    if "Invalid AI response format" in err or code == "invalid_response":
+        return Response(result, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return Response(result, status=status.HTTP_502_BAD_GATEWAY)
 
 
 def _create_audit(actor, action, entity_type, entity_id, payload):
@@ -91,6 +132,59 @@ def register(request: HttpRequest) -> HttpResponse:
     else:
         form = UserRegistrationForm()
     return render(request, "registration/register.html", {"form": form})
+
+
+@csrf_exempt
+@ratelimit(key="ip", rate="30/h", method="POST", block=True)
+@require_POST
+def pwa_incoming_share(request: HttpRequest) -> HttpResponse:
+    """Receive image from Android Web Share Target (multipart POST, no CSRF)."""
+    if not getattr(settings, "PWA_SHARE_INGEST_ENABLED", True):
+        return HttpResponse(
+            "Share ingest is temporarily unavailable.",
+            status=503,
+            content_type="text/plain; charset=utf-8",
+        )
+    cid = getattr(request, "correlation_id", None)
+    image_file = None
+    for f in request.FILES.values():
+        ct = getattr(f, "content_type", "") or ""
+        if ct.startswith("image/"):
+            image_file = f
+            break
+    if not image_file:
+        logger.info("pwa_share_ingest no_image correlation_id=%s", cid)
+        return HttpResponse("No image file", status=400, content_type="text/plain; charset=utf-8")
+    if getattr(image_file, "size", 0) > MAX_SCAN_IMAGE_BYTES:
+        return HttpResponse("File too large", status=400, content_type="text/plain; charset=utf-8")
+    raw = image_file.read()
+    if len(raw) > MAX_SCAN_IMAGE_BYTES:
+        return HttpResponse("File too large", status=400, content_type="text/plain; charset=utf-8")
+    mime = (image_file.content_type or "image/jpeg")[:128]
+    row = IncomingShareImage.objects.create(
+        image_data=raw,
+        content_type=mime,
+    )
+    logger.info("pwa_share_ingest stored id=%s correlation_id=%s", row.pk, cid)
+    token = _share_token_signer().sign(str(row.pk))
+    submit_path = f"/submit?share_token={quote(token, safe='')}"
+    if request.user.is_authenticated:
+        return redirect(submit_path)
+    return redirect(f"/accounts/login/?{urlencode({'next': submit_path})}")
+
+
+@require_GET
+def pwa_service_worker(request: HttpRequest) -> HttpResponse:
+    """Serve the PWA script from /sw.js with a broad scope (Android install / Add to Home Screen)."""
+    path = settings.BASE_DIR / "ops" / "static" / "ops" / "sw.js"
+    try:
+        body = path.read_bytes()
+    except OSError:
+        return HttpResponseNotFound()
+    resp = HttpResponse(body, content_type="application/javascript")
+    resp["Service-Worker-Allowed"] = "/"
+    resp["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 class HealthLiveView(APIView):
@@ -190,26 +284,51 @@ class SubmissionScanImageView(APIView):
         image = request.FILES.get("image")
         if not image:
             return Response({"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST)
-        if image.size > 5 * 1024 * 1024:
+        if image.size > MAX_SCAN_IMAGE_BYTES:
             return Response({"error": "File too large (max 5MB)"}, status=status.HTTP_400_BAD_REQUEST)
         mime = image.content_type or "image/jpeg"
         image_type = (request.POST.get("image_type") or "unknown").strip() or "unknown"
         result = scan_image(image.read(), mime, image_type if image_type != "unknown" else None)
-        if "error" in result:
-            err = result.get("error", "")
-            code = result.get("code", "")
-            if code == "missing_api_key":
-                return Response(result, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            if code == "quota_exceeded":
-                return Response(result, status=status.HTTP_429_TOO_MANY_REQUESTS)
-            if code == "auth_error":
-                return Response(result, status=status.HTTP_401_UNAUTHORIZED)
-            if code == "model_not_found":
-                return Response(result, status=status.HTTP_400_BAD_REQUEST)
-            if "Invalid AI response format" in err or code == "invalid_response":
-                return Response(result, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-            return Response(result, status=status.HTTP_502_BAD_GATEWAY)
-        return Response(result)
+        return _response_from_gemini_scan_result(result)
+
+
+class SubmissionScanSharedView(APIView):
+    """Consume a signed share token (Web Share Target) and run the same scan as SubmissionScanImageView."""
+
+    permission_classes = [IsContributorOrAbove]
+    parser_classes = [JSONParser]
+
+    def post(self, request: Request):
+        token = ""
+        if isinstance(request.data, dict):
+            token = (request.data.get("token") or "").strip()
+        if not token:
+            return Response({"error": "Missing token"}, status=status.HTTP_400_BAD_REQUEST)
+        signer = _share_token_signer()
+        try:
+            raw_id = signer.unsign(token, max_age=SHARE_TOKEN_MAX_AGE)
+        except SignatureExpired:
+            return Response({"error": "Share link expired", "code": "share_expired"}, status=status.HTTP_400_BAD_REQUEST)
+        except BadSignature:
+            return Response({"error": "Invalid share token", "code": "invalid_share_token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            pk = uuid.UUID(raw_id)
+        except ValueError:
+            return Response({"error": "Invalid share token", "code": "invalid_share_token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Claim and delete inside a short transaction; run Gemini outside the lock. If scan fails after
+        # delete, the user must share the image again from the source app.
+        with transaction.atomic():
+            row = IncomingShareImage.objects.select_for_update().filter(pk=pk).first()
+            if not row:
+                return Response({"error": "Share not found or already used", "code": "share_gone"}, status=status.HTTP_404_NOT_FOUND)
+            payload = bytes(row.image_data)
+            mime = row.content_type or "image/jpeg"
+            IncomingShareImage.objects.filter(pk=pk).delete()
+
+        result = scan_image(payload, mime, None)
+        return _response_from_gemini_scan_result(result)
 
 
 class TrainServiceRecentSequencesView(APIView):

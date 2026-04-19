@@ -14,6 +14,9 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
+# PWA Web Share Target ingest (POST /pwa/incoming-share). Disable to stop accepting shares without redeploying manifest.
+PWA_SHARE_INGEST_ENABLED = env.bool("PWA_SHARE_INGEST_ENABLED", default=True)
+
 # Pytest sets DATABASE_URL=sqlite:///:memory: on purpose; do not override that.
 # A stale :memory: in an interactive shell (e.g. after running pytest) blocks `.env` (django-environ
 # uses setdefault), so runserver hits an empty DB → OperationalError on session/login.
@@ -192,6 +195,8 @@ LOGGING = {
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# When a reverse proxy sends X-Forwarded-Host (uncommon on Render), enable and extend DJANGO_ALLOWED_HOSTS.
+USE_X_FORWARDED_HOST = env.bool("DJANGO_USE_X_FORWARDED_HOST", default=False)
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0

@@ -54,6 +54,8 @@ Production-grade, mobile-first, cloud-hosted coach composition decision support 
 - No horizontal scroll on core screens
 - Readable confidence badges and sequence display
 - Auto-reconnect with stale state indicators
+- PWA: manifest + `/sw.js` service worker — on Android Chrome use **Install app** / **Add to Home screen** (HTTPS required)
+- **Share to app (Android):** after installing the PWA, use Gallery/WhatsApp **Share → Coach Board** to send a photo; it opens Submit and runs the same scan as **Scan image**. Re-open the installed app once after deploy so the updated manifest (with `share_target`) is applied. Server env: `PWA_SHARE_INGEST_ENABLED` (default on); schedule `python manage.py cleanup_incoming_shares` periodically to purge stale rows.
 
 ## Production Operations
 

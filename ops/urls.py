@@ -13,6 +13,11 @@ urlpatterns = [
         name="submission-scan-image",
     ),
     path(
+        "api/v1/submissions/scan-shared",
+        views.SubmissionScanSharedView.as_view(),
+        name="submission-scan-shared",
+    ),
+    path(
         "api/v1/train-services/<int:pk>/recent-sequences",
         views.TrainServiceRecentSequencesView.as_view(),
         name="train-service-recent-sequences",

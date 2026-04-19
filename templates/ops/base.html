@@ -10,6 +10,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>{% block title %}Coach Position{% endblock %}</title>
   <link rel="manifest" href="{% static 'ops/manifest.json' %}" />
+  {% include "ops/includes/pwa_head.html" %}
   <link rel="stylesheet" href="{% static 'ops/mobile.css' %}" />
   {% block extra_head %}{% endblock %}
 </head>
@@ -38,5 +39,6 @@
 
   <div id="toastRoot" class="toast-root" aria-live="polite" aria-atomic="true"></div>
   {% block scripts %}{% endblock %}
+  {% include "ops/includes/pwa_scripts.html" %}
 </body>
 </html>

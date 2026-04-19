@@ -1,0 +1,10 @@
+<script>
+(function () {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", function () {
+    navigator.serviceWorker
+      .register("{% url 'pwa-service-worker' %}", { scope: "/" })
+      .catch(function () {});
+  });
+})();
+</script>
